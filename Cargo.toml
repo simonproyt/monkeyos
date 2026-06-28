@@ -1,0 +1,8 @@
+[workspace]
+members = [
+    "kernel",
+    "apps/hello",
+    "apps/coreutils",
+    "apps/sh"
+]
+resolver = "2"
