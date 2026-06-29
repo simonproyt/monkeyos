@@ -269,7 +269,19 @@ async function bootstrap() {
                                 totalWritten += buf_len;
                             }
                             view.setUint32(nwritten_ptr, totalWritten, true);
-                            window.append_html_overlay_text_js(1, outStr);
+                            
+                            if (fd === 1 && window.__WASI_PROXY.redirect_stdout) {
+                                const targetPath = getVfsPath(resolvePath(window.__WASI_PROXY.current_cwd || "/", window.__WASI_PROXY.redirect_stdout));
+                                if (!vfs[targetPath]) {
+                                    vfs[targetPath] = { type: "file", content: "", timestamp: Date.now() };
+                                }
+                                vfs[targetPath].content += outStr;
+                                vfs[targetPath].timestamp = Date.now();
+                                saveVfs();
+                            } else {
+                                window.append_html_overlay_text_js(1, outStr);
+                            }
+                            
                             return 0; // SUCCESS
                         }
                         return window.__WASI_PROXY.kernel.sys_fd_write(fd, iovs_ptr, iovs_len, nwritten_ptr);
@@ -316,6 +328,44 @@ async function bootstrap() {
             if (prop === 'fd_read') {
                 return function(fd, iovs_ptr, iovs_len, nread_ptr) {
                     if (fd <= 2) {
+                        if (fd === 0 && window.__WASI_PROXY.redirect_stdin && window.__WASI_PROXY.wasm !== wasmInstance) {
+                            const targetPath = getVfsPath(resolvePath(window.__WASI_PROXY.current_cwd || "/", window.__WASI_PROXY.redirect_stdin));
+                            const node = vfs[targetPath];
+                            if (!node || node.type !== "file") return 8; // EBADF
+                            
+                            // Initialize offset if not present
+                            if (typeof window.__WASI_PROXY.redirect_stdin_offset === 'undefined') {
+                                window.__WASI_PROXY.redirect_stdin_offset = 0;
+                            }
+                            
+                            const view = new DataView(window.__WASI_PROXY.wasm.exports.memory.buffer);
+                            const memory = new Uint8Array(window.__WASI_PROXY.wasm.exports.memory.buffer);
+                            
+                            let totalRead = 0;
+                            for (let i = 0; i < iovs_len; i++) {
+                                const iov_ptr = iovs_ptr + i * 8;
+                                const buf_ptr = view.getUint32(iov_ptr, true);
+                                const buf_len = view.getUint32(iov_ptr + 4, true);
+                                
+                                const remaining = node.content.length - window.__WASI_PROXY.redirect_stdin_offset;
+                                if (remaining <= 0) break;
+                                
+                                const toRead = Math.min(buf_len, remaining);
+                                for (let j = 0; j < toRead; j++) {
+                                    memory[buf_ptr + j] = node.content.charCodeAt(window.__WASI_PROXY.redirect_stdin_offset + j);
+                                }
+                                
+                                window.__WASI_PROXY.redirect_stdin_offset += toRead;
+                                totalRead += toRead;
+                                
+                                if (toRead < buf_len) break; // EOF
+                            }
+                            
+                            if (nread_ptr) {
+                                view.setUint32(nread_ptr, totalRead, true);
+                            }
+                            return 0; // SUCCESS
+                        }
                         return window.__WASI_PROXY.kernel.sys_fd_read(fd, iovs_ptr, iovs_len, nread_ptr);
                     }
                     
@@ -493,6 +543,11 @@ async function bootstrap() {
                             } else {
                                 return 44; // ENOENT
                             }
+                        } else if (node.type === "file" && (oflags & 8)) {
+                            // O_TRUNC is set
+                            node.content = "";
+                            node.timestamp = Date.now();
+                            saveVfs();
                         }
 
                         const newFd = nextFd++;
@@ -923,7 +978,12 @@ async function bootstrap() {
             window.update_html_overlay_input_line_js(id, p_str, i_str, cursor_pos);
         },
         clear_html_overlay_text_js: (id) => window.clear_html_overlay_text_js(id),
-        sys_execve: (args_ptr, args_len, cwd_ptr, cwd_len) => {
+        draw_editor_js: (id, c_ptr, c_len, cursor_pos) => {
+            const memory = new Uint8Array(wasmInstance.exports.memory.buffer);
+            const c_str = new TextDecoder().decode(memory.subarray(c_ptr, c_ptr + c_len));
+            window.draw_editor_js(id, c_str, cursor_pos);
+        },
+        sys_execve: (args_ptr, args_len, cwd_ptr, cwd_len, stdin_ptr, stdin_len, stdout_ptr, stdout_len) => {
             if (!window.__WASI_PROXY.wasm) return -1;
             const memory = new Uint8Array(window.__WASI_PROXY.wasm.exports.memory.buffer);
             let argsStr = "";
@@ -935,6 +995,15 @@ async function bootstrap() {
             for (let i = 0; i < cwd_len; i++) {
                 cwdStr += String.fromCharCode(memory[cwd_ptr + i]);
             }
+
+            let stdinStr = "";
+            for (let i = 0; i < stdin_len; i++) {
+                stdinStr += String.fromCharCode(memory[stdin_ptr + i]);
+            }
+            let stdoutStr = "";
+            for (let i = 0; i < stdout_len; i++) {
+                stdoutStr += String.fromCharCode(memory[stdout_ptr + i]);
+            }
             
             const args = argsStr.split('\0').filter(s => s.length > 0);
             if (args.length === 0) return -1;
@@ -942,7 +1011,24 @@ async function bootstrap() {
             const pathStr = args[0];
             window.__WASI_PROXY.current_args = args;
             window.__WASI_PROXY.current_cwd = cwdStr;
+            window.__WASI_PROXY.redirect_stdin = stdinStr.length > 0 ? stdinStr : null;
+            window.__WASI_PROXY.redirect_stdout = stdoutStr.length > 0 ? stdoutStr : null;
+            window.__WASI_PROXY.redirect_stdin_offset = 0;
             
+            if (window.__WASI_PROXY.redirect_stdout) {
+                const targetPath = getVfsPath(resolvePath(window.__WASI_PROXY.current_cwd || "/", window.__WASI_PROXY.redirect_stdout));
+                const parentPath = getVfsPath(resolvePath(targetPath, ".."));
+                const parent = vfs[parentPath];
+                if (parent && parent.type === "dir") {
+                    const filename = targetPath.substring(parentPath.length === 1 ? 1 : parentPath.length + 1);
+                    if (!parent.children.includes(filename)) {
+                        parent.children.push(filename);
+                    }
+                }
+                vfs[targetPath] = { type: "file", content: "", timestamp: Date.now() };
+                saveVfs();
+            }
+
             const node = vfs[pathStr];
             if (!node || node.type !== "executable") {
                 console.error("sys_execve: Executable not found in VFS: " + pathStr);
@@ -953,11 +1039,15 @@ async function bootstrap() {
                 // Synchronously instantiate the binary using the pre-compiled module if available
                 const childModule = node.module || new WebAssembly.Module(node.binary);
                 const childInstance = new WebAssembly.Instance(childModule, {
-                    wasi_snapshot_preview1: wasi_snapshot_preview1
+                    wasi_snapshot_preview1: wasi_snapshot_preview1,
+                    env: env
                 });
                 
                 // Context Switch!
                 const parentWasm = window.__WASI_PROXY.wasm;
+                const prevCwd = window.__WASI_PROXY.current_cwd;
+                const prevStdout = window.__WASI_PROXY.redirect_stdout;
+                const prevStdin = window.__WASI_PROXY.redirect_stdin;
                 window.__WASI_PROXY.wasm = childInstance;
                 
                 try {
@@ -968,8 +1058,10 @@ async function bootstrap() {
                     }
                 } finally {
                     window.__WASI_PROXY.wasm = parentWasm;
+                    window.__WASI_PROXY.current_cwd = prevCwd;
+                    window.__WASI_PROXY.redirect_stdout = prevStdout;
+                    window.__WASI_PROXY.redirect_stdin = prevStdin;
                 }
-                
                 return 0; // SUCCESS
             } catch (e) {
                 console.error("Failed to execute process:", e);
@@ -978,7 +1070,7 @@ async function bootstrap() {
         }
     };
 
-    const response = await fetch('/kernel.wasm');
+    const response = await fetch('/kernel.wasm?t=' + Date.now());
     const wasmBytes = await response.arrayBuffer();
     const result = await WebAssembly.instantiate(wasmBytes, {
         wasi_snapshot_preview1,
@@ -986,13 +1078,36 @@ async function bootstrap() {
     });
     
     // Fetch and compile apps asynchronously to avoid 8MB sync compilation limits
-    const helloResponse = await fetch('/bin/hello.wasm');
+    const t = Date.now();
+    const helloResponse = await fetch('/bin/hello.wasm?t=' + t);
     const helloBytes = await helloResponse.arrayBuffer();
-    const helloModule = await WebAssembly.compile(helloBytes);
-    vfs["/bin/hello"] = { type: "executable", binary: helloBytes, module: helloModule };
 
-    const coreutilsResponse = await fetch('/bin/coreutils.wasm');
+    const coreutilsResponse = await fetch('/bin/coreutils.wasm?t=' + t);
     const coreutilsBytes = await coreutilsResponse.arrayBuffer();
+
+    const shResponse = await fetch('/bin/sh.wasm?t=' + t);
+    const shBytes = await shResponse.arrayBuffer();
+
+    const editResponse = await fetch('/bin/edit.wasm?t=' + t);
+    const editBytes = await editResponse.arrayBuffer();
+
+    if (!vfs["/bin"]) vfs["/bin"] = { type: "dir", children: [] };
+    
+    // Install kernel
+    vfs["/kernel"] = { type: "executable", binary: wasmBytes, module: await WebAssembly.compile(wasmBytes), timestamp: Date.now() };
+
+    // Install hello
+    vfs["/bin/hello"] = { type: "executable", binary: helloBytes, module: await WebAssembly.compile(helloBytes), timestamp: Date.now() };
+    if (!vfs["/bin"].children.includes("hello")) vfs["/bin"].children.push("hello");
+
+    // Install sh
+    vfs["/bin/sh"] = { type: "executable", binary: shBytes, module: await WebAssembly.compile(shBytes), timestamp: Date.now() };
+    if (!vfs["/bin"].children.includes("sh")) vfs["/bin"].children.push("sh");
+
+    // Install edit
+    vfs["/bin/edit"] = { type: "executable", binary: editBytes, module: await WebAssembly.compile(editBytes), timestamp: Date.now() };
+    if (!vfs["/bin"].children.includes("edit")) vfs["/bin"].children.push("edit");
+
     const coreutilsModule = await WebAssembly.compile(coreutilsBytes);
     vfs["/bin/coreutils"] = { type: "executable", binary: coreutilsBytes, module: coreutilsModule };
     vfs["/bin/ls"] = vfs["/bin/coreutils"];
@@ -1002,11 +1117,10 @@ async function bootstrap() {
     vfs["/bin/rm"] = vfs["/bin/coreutils"];
     vfs["/bin/touch"] = vfs["/bin/coreutils"];
     vfs["/bin/pwd"] = vfs["/bin/coreutils"];
-
-    const shResponse = await fetch('/bin/sh.wasm');
-    const shBytes = await shResponse.arrayBuffer();
-    const shModule = await WebAssembly.compile(shBytes);
-    vfs["/bin/sh"] = { type: "executable", binary: shBytes, module: shModule };
+    vfs["/bin/sort"] = vfs["/bin/coreutils"];
+    vfs["/bin/wc"] = vfs["/bin/coreutils"];
+    vfs["/bin/head"] = vfs["/bin/coreutils"];
+    vfs["/bin/tail"] = vfs["/bin/coreutils"];
     
     // Ensure bin is in root children
     const rootNode = vfs["/"];
@@ -1016,7 +1130,7 @@ async function bootstrap() {
     
     const binNode = vfs["/bin"];
     if (binNode) {
-        const apps = ["coreutils", "ls", "cat", "echo", "mkdir", "rm", "touch", "pwd", "sh"];
+        const apps = ["coreutils", "ls", "cat", "echo", "mkdir", "rm", "touch", "pwd", "sort", "wc", "head", "tail", "sh"];
         for (let app of apps) {
             if (!binNode.children.includes(app)) {
                 binNode.children.push(app);
@@ -1059,6 +1173,19 @@ async function bootstrap() {
     window.addEventListener('mousedown', (e) => { if (e.button === 0) kernel.push_mouse_button(true); });
     window.addEventListener('mouseup', (e) => { if (e.button === 0) kernel.push_mouse_button(false); });
     window.addEventListener('keydown', (e) => {
+        if (e.ctrlKey) {
+            if (e.key === 's' || e.key === 'S') {
+                e.preventDefault();
+                kernel.push_key_event(19);
+                return;
+            }
+            if (e.key === 'q' || e.key === 'Q') {
+                e.preventDefault();
+                kernel.push_key_event(17);
+                return;
+            }
+        }
+        
         if (e.key.length === 1) {
             kernel.push_key_event(e.key.charCodeAt(0));
         } else if (e.key === 'Enter') {
@@ -1069,6 +1196,10 @@ async function bootstrap() {
             kernel.push_key_event(1037);
         } else if (e.key === 'ArrowRight') {
             kernel.push_key_event(1039);
+        } else if (e.key === 'ArrowUp') {
+            kernel.push_key_event(1038);
+        } else if (e.key === 'ArrowDown') {
+            kernel.push_key_event(1040);
         }
     });
 }
@@ -1174,9 +1305,41 @@ window.update_html_overlay_input_line_js = function(id, prompt, input, cursor_po
         } else {
             div.innerHTML = htmlLine;
         }
+        div.scrollTop = div.scrollHeight;
     } else {
         pendingLastLine[id] = { prompt, input, cursor_pos };
     }
+};
+
+window.draw_editor_js = function(id, content, cursor_pos) {
+    const div = document.getElementById('overlay-' + id);
+    if (!div) return;
+
+    const escapeHtml = (unsafe) => {
+        return unsafe
+             .replace(/&/g, "&amp;")
+             .replace(/</g, "&lt;")
+             .replace(/>/g, "&gt;")
+             .replace(/"/g, "&quot;")
+             .replace(/'/g, "&#039;");
+    };
+
+    let beforeCursor = escapeHtml(content.substring(0, cursor_pos));
+    
+    let cursorCharStr = content.substring(cursor_pos, cursor_pos + 1);
+    let afterCursorStr = content.substring(cursor_pos + 1);
+    if (cursorCharStr === '\n') {
+        cursorCharStr = ' ';
+        afterCursorStr = '\n' + afterCursorStr;
+    } else if (!cursorCharStr) {
+        cursorCharStr = ' ';
+    }
+    
+    let cursorChar = escapeHtml(cursorCharStr);
+    let afterCursor = escapeHtml(afterCursorStr);
+    
+    let htmlContent = "--- Edit Mode (Ctrl+S to save, Ctrl+Q to quit) ---\n\n" + beforeCursor + '<span class="cursor">' + cursorChar + '</span>' + afterCursor;
+    div.innerHTML = htmlContent;
 };
 
 window.clear_html_overlay_text_js = function(id) {

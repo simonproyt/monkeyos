@@ -12,6 +12,7 @@ extern "C" {
     fn append_html_overlay_text_js(id: u32, ptr: *const u8, len: usize);
     fn update_html_overlay_input_line_js(id: u32, p_ptr: *const u8, p_len: usize, i_ptr: *const u8, i_len: usize, cursor_pos: u32);
     fn clear_html_overlay_text_js(id: u32);
+    fn draw_editor_js(id: u32, content_ptr: *const u8, content_len: usize, cursor_pos: u32);
 }
 
 pub struct DisplayServer {
@@ -48,6 +49,9 @@ impl crate::process::Process for DisplayServer {
                 }
                 MessagePayload::UpdateHtmlOverlayInputLine { id, prompt, input, cursor_pos } => {
                     unsafe { update_html_overlay_input_line_js(id, prompt.as_ptr(), prompt.len(), input.as_ptr(), input.len(), cursor_pos) };
+                }
+                MessagePayload::DrawEditor { id, content, cursor_pos } => {
+                    unsafe { draw_editor_js(id, content.as_ptr(), content.len(), cursor_pos) };
                 }
                 MessagePayload::ClearHtmlOverlayText { id } => {
                     unsafe { clear_html_overlay_text_js(id) };

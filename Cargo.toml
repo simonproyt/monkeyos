@@ -4,5 +4,5 @@ members = [
     "apps/hello",
     "apps/coreutils",
     "apps/sh"
-]
+, "apps/edit"]
 resolver = "2"

@@ -36,6 +36,18 @@ fn main() {
         "pwd" => {
             let _ = uu_pwd::uumain(args.into_iter());
         }
+        "wc" => {
+            let _ = uu_wc::uumain(args.into_iter());
+        }
+        "sort" => {
+            let _ = uu_sort::uumain(args.into_iter());
+        }
+        "head" => {
+            let _ = uu_head::uumain(args.into_iter());
+        }
+        "tail" => {
+            let _ = uu_tail::uumain(args.into_iter());
+        }
         _ => {
             eprintln!("{}: command not found in coreutils multicall binary", program);
         }

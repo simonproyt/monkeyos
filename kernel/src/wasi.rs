@@ -34,9 +34,24 @@ pub fn handle_fd_write(fd: u32, iovs_ptr: u32, iovs_len: u32, nwritten_ptr: u32)
 #[link(wasm_import_module = "env")]
 extern "C" {
     fn wasi_print_js(id: u32, ptr: *const u8, len: usize);
-    fn sys_execve(args_ptr: *const u8, args_len: usize, cwd_ptr: *const u8, cwd_len: usize) -> i32;
+    fn sys_execve(args_ptr: *const u8, args_len: usize, cwd_ptr: *const u8, cwd_len: usize, stdin_ptr: *const u8, stdin_len: usize, stdout_ptr: *const u8, stdout_len: usize) -> i32;
 }
 
-pub fn call_sys_execve(args_buf: &[u8], cwd: &str) -> i32 {
-    unsafe { sys_execve(args_buf.as_ptr(), args_buf.len(), cwd.as_ptr(), cwd.len()) }
+pub fn call_sys_execve(args_buf: &[u8], cwd: &str, stdin: Option<&str>, stdout: Option<&str>) -> i32 {
+    let stdin_str = stdin.unwrap_or("");
+    let stdout_str = stdout.unwrap_or("");
+    unsafe { 
+        sys_execve(
+            args_buf.as_ptr(), args_buf.len(), 
+            cwd.as_ptr(), cwd.len(),
+            stdin_str.as_ptr(), stdin_str.len(),
+            stdout_str.as_ptr(), stdout_str.len()
+        ) 
+    }
+}
+
+pub fn print_direct(id: u32, text: &str) {
+    unsafe {
+        wasi_print_js(id, text.as_ptr(), text.len());
+    }
 }

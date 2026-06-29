@@ -11,6 +11,9 @@ pub struct TerminalProcess {
     prompt: String,
     cursor_pos: usize,
     cwd: String,
+    edit_state: Option<String>,
+    history: Vec<String>,
+    history_index: usize,
 }
 
 impl TerminalProcess {
@@ -23,6 +26,9 @@ impl TerminalProcess {
             prompt: String::from("root@monkeyos:/# "),
             cursor_pos: 0,
             cwd: String::from("/"),
+            edit_state: None,
+            history: Vec::new(),
+            history_index: 0,
         }
     }
 
@@ -44,11 +50,28 @@ impl TerminalProcess {
     fn redraw_input_line(&self, env: &mut SyscallEnv) {
         if let Some(id) = self.window_id {
             if let Some(display_pid) = env.lookup_service("display") {
+                let prompt = if self.edit_state.is_some() {
+                    "".to_string()
+                } else {
+                    self.prompt.clone()
+                };
                 env.send_msg(display_pid, MessagePayload::UpdateHtmlOverlayInputLine { 
                     id, 
-                    prompt: self.prompt.clone(),
+                    prompt,
                     input: self.input_buffer.clone(),
                     cursor_pos: self.cursor_pos as u32,
+                });
+            }
+        }
+    }
+
+    fn redraw_editor(&self, env: &mut SyscallEnv) {
+        if let Some(id) = self.window_id {
+            if let Some(display_pid) = env.lookup_service("display") {
+                env.send_msg(display_pid, MessagePayload::DrawEditor { 
+                    id, 
+                    content: self.input_buffer.clone(), 
+                    cursor_pos: self.cursor_pos as u32 
                 });
             }
         }
@@ -58,9 +81,13 @@ impl TerminalProcess {
         let cmd = self.input_buffer.trim().to_string();
         
         // Finalize current line (remove cursor block)
-        unsafe { crate::wasi::CURRENT_TERMINAL_ID = self.window_id; }
-        println!();
-        unsafe { crate::wasi::CURRENT_TERMINAL_ID = None; }
+        if let Some(id) = self.window_id {
+            crate::wasi::print_direct(id, "\n");
+        } else {
+            self.print(env, "\n");
+        }
+
+
 
         if cmd.is_empty() {
             self.input_buffer.clear();
@@ -75,14 +102,38 @@ impl TerminalProcess {
 
         match program {
             "help" => {
-                self.print(env, "Available commands: help, clear, cd, ls, cat, echo, mkdir, rm, touch, pwd, sh\n");
+                self.print(env, "Available commands: help, clear, cd, ls, cat, echo, mkdir, rm, touch, pwd, sh, edit\n");
                 self.print(env, "Try: ls /bin\n");
             }
             "clear" => {
-                if let Some(id) = &self.window_id {
+                if let Some(id) = self.window_id {
                     if let Some(display_pid) = env.lookup_service("display") {
-                        env.send_msg(display_pid, MessagePayload::ClearHtmlOverlayText { id: id.clone() });
+                        env.send_msg(display_pid, MessagePayload::ClearHtmlOverlayText { id });
                     }
+                }
+            }
+            "edit" => {
+                if parts.len() < 2 {
+                    self.print(env, "Usage: edit <filename>
+");
+                } else {
+                    let mut filename = parts[1].to_string();
+                    if !filename.starts_with('/') {
+                        if self.cwd == "/" {
+                            filename = format!("/{}", filename);
+                        } else {
+                            filename = format!("{}/{}", self.cwd, filename);
+                        }
+                    }
+                    let mut file_content = String::new();
+                    if let Ok(existing) = std::fs::read_to_string(&filename) {
+                        file_content = existing;
+                    }
+                    self.edit_state = Some(filename);
+                    self.input_buffer = file_content;
+                    self.cursor_pos = self.input_buffer.len();
+                    self.redraw_editor(env);
+                    return;
                 }
             }
             "cd" => {
@@ -121,30 +172,29 @@ impl TerminalProcess {
                 self.update_prompt();
             }
             _ => {
-                let bin_path = format!("/bin/{}", program);
-                
-                // Construct the null-separated arguments buffer
+                let bin_path = "/bin/sh";
                 let mut args_buf = Vec::new();
                 args_buf.extend_from_slice(bin_path.as_bytes());
                 args_buf.push(0);
-                for arg in parts.iter().skip(1) {
-                    args_buf.extend_from_slice(arg.as_bytes());
-                    args_buf.push(0);
-                }
+                args_buf.extend_from_slice(b"-c");
+                args_buf.push(0);
+                args_buf.extend_from_slice(cmd.as_bytes());
+                args_buf.push(0);
                 
                 unsafe {
                     crate::wasi::CURRENT_TERMINAL_ID = self.window_id.clone();
                 }
-                let ret = crate::wasi::call_sys_execve(&args_buf, &self.cwd);
+                crate::wasi::call_sys_execve(&args_buf, &self.cwd, None, None);
                 unsafe {
                     crate::wasi::CURRENT_TERMINAL_ID = None;
-                }
-                if ret != 0 {
-                    self.print(env, &format!("{}: command not found\n", program));
                 }
             }
         }
 
+        if !self.input_buffer.trim().is_empty() {
+            self.history.push(self.input_buffer.clone());
+        }
+        self.history_index = self.history.len();
         self.input_buffer.clear();
         self.cursor_pos = 0;
         self.print(env, &self.prompt); // Output a newline/prompt so the replace_last_line has a target
@@ -172,29 +222,183 @@ impl Process for TerminalProcess {
         while let Some(msg) = env.recv_msg() {
             match msg.payload {
                 MessagePayload::KeyPress { key_code } => {
-                    if key_code == 13 { // Enter
-                        self.execute_command(env);
-                    } else if key_code == 8 { // Backspace
-                        if self.cursor_pos > 0 {
-                            self.cursor_pos -= 1;
-                            self.input_buffer.remove(self.cursor_pos);
+                    if self.edit_state.is_some() {
+                        if key_code == 19 { // Ctrl+S
+                            if let Some(ref filename) = self.edit_state {
+                                if let Err(e) = std::fs::write(filename, &self.input_buffer) {
+                                    // ignore for now or print error
+                                }
+                            }
+                        } else if key_code == 17 { // Ctrl+Q
+                            self.edit_state = None;
+                            self.input_buffer.clear();
+                            self.cursor_pos = 0;
+                            if let Some(id) = self.window_id {
+                                if let Some(display_pid) = env.lookup_service("display") {
+                                    env.send_msg(display_pid, MessagePayload::ClearHtmlOverlayText { id });
+                                }
+                            }
+                            self.print(env, "
+");
+                            self.print(env, &self.prompt);
                             self.redraw_input_line(env);
+                        } else if key_code == 13 { // Enter
+                            self.input_buffer.insert(self.cursor_pos, '\n');
+                            self.cursor_pos += 1;
+                            self.redraw_editor(env);
+                        } else if key_code == 8 { // Backspace
+                            if self.cursor_pos > 0 {
+                                self.cursor_pos -= 1;
+                                self.input_buffer.remove(self.cursor_pos);
+                                self.redraw_editor(env);
+                            }
+                        } else if key_code == 1037 { // ArrowLeft
+                            if self.cursor_pos > 0 {
+                                self.cursor_pos -= 1;
+                                self.redraw_editor(env);
+                            }
+                        } else if key_code == 1038 { // ArrowUp
+                            let mut prev_newline = 0;
+                            let mut line_start = 0;
+                            let mut col = 0;
+                            for (i, c) in self.input_buffer.chars().enumerate() {
+                                if i == self.cursor_pos { break; }
+                                if c == '\n' {
+                                    prev_newline = line_start;
+                                    line_start = i + 1;
+                                    col = 0;
+                                } else {
+                                    col += 1;
+                                }
+                            }
+                            if line_start > 0 {
+                                let mut prev_col = 0;
+                                self.cursor_pos = prev_newline;
+                                for i in prev_newline..line_start-1 {
+                                    if prev_col == col { break; }
+                                    self.cursor_pos += 1;
+                                    prev_col += 1;
+                                }
+                                self.redraw_editor(env);
+                            }
+                        } else if key_code == 1040 { // ArrowDown
+                            let mut line_start = 0;
+                            let mut col = 0;
+                            for (i, c) in self.input_buffer.chars().enumerate() {
+                                if i == self.cursor_pos { break; }
+                                if c == '\n' {
+                                    line_start = i + 1;
+                                    col = 0;
+                                } else {
+                                    col += 1;
+                                }
+                            }
+                            if let Some(next_newline) = self.input_buffer[self.cursor_pos..].find('\n') {
+                                let next_line_start = self.cursor_pos + next_newline + 1;
+                                let mut new_pos = next_line_start;
+                                let mut curr_col = 0;
+                                for _ in next_line_start..self.input_buffer.len() {
+                                    if curr_col == col || self.input_buffer.as_bytes()[new_pos] == b'\n' { break; }
+                                    new_pos += 1;
+                                    curr_col += 1;
+                                }
+                                self.cursor_pos = new_pos;
+                                self.redraw_editor(env);
+                            }
+                        } else if key_code == 46 { // Delete
+                            if self.cursor_pos < self.input_buffer.len() {
+                                self.input_buffer.remove(self.cursor_pos);
+                                self.redraw_editor(env);
+                            }
+                        } else if key_code == 1039 { // ArrowRight
+                            if self.cursor_pos < self.input_buffer.len() {
+                                self.cursor_pos += 1;
+                                self.redraw_editor(env);
+                            }
+                        } else if key_code == 1038 { // ArrowUp
+                            // Find previous newline
+                            let mut prev_newline = 0;
+                            let mut current_newline = 0;
+                            let mut found_current = false;
+                            for (i, c) in self.input_buffer.chars().enumerate() {
+                                if i == self.cursor_pos { found_current = true; }
+                                if c == '\n' {
+                                    if !found_current {
+                                        prev_newline = current_newline;
+                                        current_newline = i;
+                                    }
+                                }
+                            }
+                            if self.cursor_pos > current_newline {
+                                let col = self.cursor_pos - current_newline;
+                                let mut new_pos = prev_newline + col;
+                                if new_pos > current_newline { new_pos = current_newline; }
+                                self.cursor_pos = new_pos;
+                                self.redraw_editor(env);
+                            }
+                        } else if key_code == 1040 { // ArrowDown
+                            // Simple ArrowDown logic: just move cursor to end of next line
+                            let mut next_newline = self.input_buffer.len();
+                            for (i, c) in self.input_buffer.chars().enumerate().skip(self.cursor_pos) {
+                                if c == '\n' {
+                                    next_newline = i;
+                                    break;
+                                }
+                            }
+                            if next_newline < self.input_buffer.len() {
+                                self.cursor_pos = next_newline + 1;
+                                self.redraw_editor(env);
+                            }
+                        } else if key_code >= 32 && key_code <= 126 {
+                            let c = (key_code as u8) as char;
+                            self.input_buffer.insert(self.cursor_pos, c);
+                            self.cursor_pos += 1;
+                            self.redraw_editor(env);
                         }
-                    } else if key_code == 1037 { // ArrowLeft
-                        if self.cursor_pos > 0 {
-                            self.cursor_pos -= 1;
-                            self.redraw_input_line(env);
-                        }
-                    } else if key_code == 1039 { // ArrowRight
-                        if self.cursor_pos < self.input_buffer.len() {
+                    } else {
+                        // NORMAL TERMINAL MODE
+                        if key_code == 13 { // Enter
+                            self.execute_command(env);
+                        } else if key_code == 8 { // Backspace
+                            if self.cursor_pos > 0 {
+                                self.cursor_pos -= 1;
+                                self.input_buffer.remove(self.cursor_pos);
+                                self.redraw_input_line(env);
+                            }
+                        } else if key_code == 1037 { // ArrowLeft
+                            if self.cursor_pos > 0 {
+                                self.cursor_pos -= 1;
+                                self.redraw_input_line(env);
+                            }
+                        } else if key_code == 1039 { // ArrowRight
+                            if self.cursor_pos < self.input_buffer.len() {
+                                self.cursor_pos += 1;
+                                self.redraw_input_line(env);
+                            }
+                        } else if key_code == 1038 { // ArrowUp
+                            if !self.history.is_empty() && self.history_index > 0 {
+                                self.history_index -= 1;
+                                self.input_buffer = self.history[self.history_index].clone();
+                                self.cursor_pos = self.input_buffer.len();
+                                self.redraw_input_line(env);
+                            }
+                        } else if key_code == 1040 { // ArrowDown
+                            if self.history_index < self.history.len() {
+                                self.history_index += 1;
+                                if self.history_index == self.history.len() {
+                                    self.input_buffer.clear();
+                                } else {
+                                    self.input_buffer = self.history[self.history_index].clone();
+                                }
+                                self.cursor_pos = self.input_buffer.len();
+                                self.redraw_input_line(env);
+                            }
+                        } else if key_code >= 32 && key_code <= 126 {
+                            let c = (key_code as u8) as char;
+                            self.input_buffer.insert(self.cursor_pos, c);
                             self.cursor_pos += 1;
                             self.redraw_input_line(env);
                         }
-                    } else if key_code >= 32 && key_code <= 126 {
-                        let c = (key_code as u8) as char;
-                        self.input_buffer.insert(self.cursor_pos, c);
-                        self.cursor_pos += 1;
-                        self.redraw_input_line(env);
                     }
                 }
                 _ => {}

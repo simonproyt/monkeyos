@@ -15,6 +15,7 @@ pub enum MessagePayload {
     AppendHtmlOverlayText { id: u32, text: String },
     UpdateHtmlOverlayInputLine { id: u32, prompt: String, input: String, cursor_pos: u32 },
     ClearHtmlOverlayText { id: u32 },
+    DrawEditor { id: u32, content: String, cursor_pos: u32 },
     // Other syscalls / service messages will go here
 }
 
