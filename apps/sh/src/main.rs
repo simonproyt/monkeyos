@@ -22,7 +22,7 @@ fn call_sys_execve(args_buf: &[u8], cwd: &str, stdin: Option<&str>, stdout: Opti
 
 fn execute_command(cmd_str: &str, cwd: &str, mut stdin: Option<String>, mut stdout: Option<String>) {
     let spaced_cmd = cmd_str.replace(">", " > ").replace("<", " < ").replace("|", " | ");
-    let mut parts: Vec<&str> = spaced_cmd.split_whitespace().collect();
+    let parts: Vec<&str> = spaced_cmd.split_whitespace().collect();
     if parts.is_empty() { return; }
 
     // Parse > and <

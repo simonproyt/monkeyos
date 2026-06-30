@@ -1,5 +1,4 @@
-use core::sync::atomic::{AtomicU32, Ordering};
-use crate::process::ProcessId;
+
 
 // We will use this to track which terminal process is currently "active" for WASI stdout.
 pub static mut CURRENT_TERMINAL_ID: Option<u32> = None;
@@ -17,10 +16,10 @@ pub fn handle_fd_write(fd: u32, iovs_ptr: u32, iovs_len: u32, nwritten_ptr: u32)
         for iov in iovs {
             let ptr = iov[0] as *const u8;
             let len = iov[1] as usize;
-            let slice = core::slice::from_raw_parts(ptr as *const u8, len);
-            if let Ok(text) = core::str::from_utf8(slice) {
+            let slice = core::slice::from_raw_parts(ptr, len);
+            if core::str::from_utf8(slice).is_ok() {
                 let id = CURRENT_TERMINAL_ID.unwrap_or(0);
-                wasi_print_js(id, ptr as *const u8, len);
+                wasi_print_js(id, ptr, len);
             }
             total_written += len;
         }

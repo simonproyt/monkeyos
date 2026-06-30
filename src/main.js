@@ -129,6 +129,9 @@ async function initWebGPU() {
         rectsToDraw = [];
     };
 
+    let vertexBuffer = null;
+    let vertexBufferSize = 0;
+
     function renderWebGPU() {
         if (rectsToDraw.length === 0) return;
 
@@ -146,10 +149,15 @@ async function initWebGPU() {
             vertices[idx+10]= r.x;     vertices[idx+11]= r.y+r.h;
         }
 
-        const vertexBuffer = device.createBuffer({
-            size: vertices.byteLength,
-            usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
-        });
+        if (!vertexBuffer || vertexBufferSize < vertices.byteLength) {
+            if (vertexBuffer) vertexBuffer.destroy();
+            vertexBufferSize = Math.max(vertices.byteLength, vertexBufferSize * 2, 4096);
+            vertexBuffer = device.createBuffer({
+                size: vertexBufferSize,
+                usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+            });
+        }
+        
         device.queue.writeBuffer(vertexBuffer, 0, vertices);
 
         const commandEncoder = device.createCommandEncoder();
@@ -169,7 +177,6 @@ async function initWebGPU() {
         passEncoder.end();
 
         device.queue.submit([commandEncoder.finish()]);
-        vertexBuffer.destroy();
     }
 
     console.log("[ OK ] WebGPU subsystem initialized.");

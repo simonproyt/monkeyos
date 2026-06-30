@@ -5,7 +5,7 @@ pub struct FileHandle {
 }
 
 pub fn open(env: &mut SyscallEnv, path: &str) -> Option<FileHandle> {
-    if let Some(vfs_pid) = env.lookup_service("vfs") {
+    if let Some(_vfs_pid) = env.lookup_service("vfs") {
         crate::log(&std::format!("[API] Opening file: {}", path));
         Some(FileHandle {})
     } else {

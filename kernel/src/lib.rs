@@ -60,11 +60,19 @@ impl Kernel {
             wm_pid: None,
         }
     }
+}
 
+impl Default for Kernel {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Kernel {
     pub fn tick(&mut self) {
         self.ticks += 1;
         
-        if self.ticks % 60 == 0 {
+        if self.ticks.is_multiple_of(60) {
             match self.state {
                 BootState::Starting => {
                     log("MonkeyOS Microkernel v0.1.0");
@@ -153,25 +161,25 @@ pub extern "C" fn kernel_new() -> *mut Kernel {
 }
 
 #[no_mangle]
-pub extern "C" fn kernel_tick(kernel: *mut Kernel) {
+pub unsafe extern "C" fn kernel_tick(kernel: *mut Kernel) {
     let k = unsafe { &mut *kernel };
     k.tick();
 }
 
 #[no_mangle]
-pub extern "C" fn kernel_push_mouse_move(kernel: *mut Kernel, x: i32, y: i32) {
+pub unsafe extern "C" fn kernel_push_mouse_move(kernel: *mut Kernel, x: i32, y: i32) {
     let k = unsafe { &mut *kernel };
     k.push_mouse_move(x, y);
 }
 
 #[no_mangle]
-pub extern "C" fn kernel_push_mouse_button(kernel: *mut Kernel, down: bool) {
+pub unsafe extern "C" fn kernel_push_mouse_button(kernel: *mut Kernel, down: bool) {
     let k = unsafe { &mut *kernel };
     k.push_mouse_button(down);
 }
 
 #[no_mangle]
-pub extern "C" fn kernel_push_key_event(kernel: *mut Kernel, key_code: u32) {
+pub unsafe extern "C" fn kernel_push_key_event(kernel: *mut Kernel, key_code: u32) {
     let k = unsafe { &mut *kernel };
     k.push_key_event(key_code);
 }

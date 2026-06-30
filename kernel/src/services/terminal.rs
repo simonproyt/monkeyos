@@ -225,7 +225,7 @@ impl Process for TerminalProcess {
                     if self.edit_state.is_some() {
                         if key_code == 19 { // Ctrl+S
                             if let Some(ref filename) = self.edit_state {
-                                if let Err(e) = std::fs::write(filename, &self.input_buffer) {
+                                if let Err(_e) = std::fs::write(filename, &self.input_buffer) {
                                     // ignore for now or print error
                                 }
                             }
@@ -272,22 +272,18 @@ impl Process for TerminalProcess {
                                 }
                             }
                             if line_start > 0 {
-                                let mut prev_col = 0;
                                 self.cursor_pos = prev_newline;
-                                for i in prev_newline..line_start-1 {
+                                for (prev_col, _i) in (prev_newline..line_start-1).enumerate() {
                                     if prev_col == col { break; }
                                     self.cursor_pos += 1;
-                                    prev_col += 1;
                                 }
                                 self.redraw_editor(env);
                             }
                         } else if key_code == 1040 { // ArrowDown
-                            let mut line_start = 0;
                             let mut col = 0;
                             for (i, c) in self.input_buffer.chars().enumerate() {
                                 if i == self.cursor_pos { break; }
                                 if c == '\n' {
-                                    line_start = i + 1;
                                     col = 0;
                                 } else {
                                     col += 1;
@@ -296,11 +292,9 @@ impl Process for TerminalProcess {
                             if let Some(next_newline) = self.input_buffer[self.cursor_pos..].find('\n') {
                                 let next_line_start = self.cursor_pos + next_newline + 1;
                                 let mut new_pos = next_line_start;
-                                let mut curr_col = 0;
-                                for _ in next_line_start..self.input_buffer.len() {
+                                for (curr_col, _) in (next_line_start..self.input_buffer.len()).enumerate() {
                                     if curr_col == col || self.input_buffer.as_bytes()[new_pos] == b'\n' { break; }
                                     new_pos += 1;
-                                    curr_col += 1;
                                 }
                                 self.cursor_pos = new_pos;
                                 self.redraw_editor(env);
@@ -315,41 +309,7 @@ impl Process for TerminalProcess {
                                 self.cursor_pos += 1;
                                 self.redraw_editor(env);
                             }
-                        } else if key_code == 1038 { // ArrowUp
-                            // Find previous newline
-                            let mut prev_newline = 0;
-                            let mut current_newline = 0;
-                            let mut found_current = false;
-                            for (i, c) in self.input_buffer.chars().enumerate() {
-                                if i == self.cursor_pos { found_current = true; }
-                                if c == '\n' {
-                                    if !found_current {
-                                        prev_newline = current_newline;
-                                        current_newline = i;
-                                    }
-                                }
-                            }
-                            if self.cursor_pos > current_newline {
-                                let col = self.cursor_pos - current_newline;
-                                let mut new_pos = prev_newline + col;
-                                if new_pos > current_newline { new_pos = current_newline; }
-                                self.cursor_pos = new_pos;
-                                self.redraw_editor(env);
-                            }
-                        } else if key_code == 1040 { // ArrowDown
-                            // Simple ArrowDown logic: just move cursor to end of next line
-                            let mut next_newline = self.input_buffer.len();
-                            for (i, c) in self.input_buffer.chars().enumerate().skip(self.cursor_pos) {
-                                if c == '\n' {
-                                    next_newline = i;
-                                    break;
-                                }
-                            }
-                            if next_newline < self.input_buffer.len() {
-                                self.cursor_pos = next_newline + 1;
-                                self.redraw_editor(env);
-                            }
-                        } else if key_code >= 32 && key_code <= 126 {
+                        } else if (32..=126).contains(&key_code) {
                             let c = (key_code as u8) as char;
                             self.input_buffer.insert(self.cursor_pos, c);
                             self.cursor_pos += 1;
@@ -393,7 +353,7 @@ impl Process for TerminalProcess {
                                 self.cursor_pos = self.input_buffer.len();
                                 self.redraw_input_line(env);
                             }
-                        } else if key_code >= 32 && key_code <= 126 {
+                        } else if (32..=126).contains(&key_code) {
                             let c = (key_code as u8) as char;
                             self.input_buffer.insert(self.cursor_pos, c);
                             self.cursor_pos += 1;
