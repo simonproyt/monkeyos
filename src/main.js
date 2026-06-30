@@ -213,9 +213,18 @@ async function bootstrap() {
 
     function saveVfsToDB(db, vfsData) {
         return new Promise((resolve, reject) => {
+            // Strip out non-serializable properties (like WebAssembly.Module) before saving
+            const dataToSave = {};
+            for (const path in vfsData) {
+                const node = vfsData[path];
+                dataToSave[path] = { ...node };
+                if (dataToSave[path].module) {
+                    delete dataToSave[path].module;
+                }
+            }
             const transaction = db.transaction("vfs_store", "readwrite");
             const store = transaction.objectStore("vfs_store");
-            const request = store.put(vfsData, "vfs");
+            const request = store.put(dataToSave, "vfs");
             request.onsuccess = () => resolve();
             request.onerror = () => reject(request.error);
         });
@@ -301,11 +310,11 @@ async function bootstrap() {
                 if (!vfs["/bin"].children.includes("coreutils")) {
                     vfs["/bin"].children.push("coreutils");
                 }
-                // create symlinks for coreutils commands
+                // create aliases for coreutils commands
                 const cmds = ["ls", "cat", "echo", "pwd", "mkdir", "rm", "head", "tail", "wc", "sort", "touch"];
                 for (let cmd of cmds) {
                     if (!vfs[`/bin/${cmd}`]) {
-                        vfs[`/bin/${cmd}`] = { type: "symlink", target: "/bin/coreutils", timestamp: Date.now() };
+                        vfs[`/bin/${cmd}`] = vfs["/bin/coreutils"];
                         vfs["/bin"].children.push(cmd);
                     }
                 }
@@ -1188,50 +1197,20 @@ async function bootstrap() {
         env
     });
     
-    // Fetch and compile apps asynchronously to avoid 8MB sync compilation limits
-    const t = Date.now();
-    const helloResponse = await fetch('/bin/hello.wasm?t=' + t);
-    const helloBytes = await helloResponse.arrayBuffer();
-
-    const coreutilsResponse = await fetch('/bin/coreutils.wasm?t=' + t);
-    const coreutilsBytes = await coreutilsResponse.arrayBuffer();
-
-    const shResponse = await fetch('/bin/sh.wasm?t=' + t);
-    const shBytes = await shResponse.arrayBuffer();
-
-    const editResponse = await fetch('/bin/edit.wasm?t=' + t);
-    const editBytes = await editResponse.arrayBuffer();
-
-    if (!vfs["/bin"]) vfs["/bin"] = { type: "dir", children: [] };
-    
-    // Install kernel
+    // Install kernel (no need to save to VFS DB since it's the core OS)
     vfs["/kernel"] = { type: "executable", binary: wasmBytes, module: await WebAssembly.compile(wasmBytes), timestamp: Date.now() };
 
-    // Install hello
-    vfs["/bin/hello"] = { type: "executable", binary: helloBytes, module: await WebAssembly.compile(helloBytes), timestamp: Date.now() };
-    if (!vfs["/bin"].children.includes("hello")) vfs["/bin"].children.push("hello");
-
-    // Install sh
-    vfs["/bin/sh"] = { type: "executable", binary: shBytes, module: await WebAssembly.compile(shBytes), timestamp: Date.now() };
-    if (!vfs["/bin"].children.includes("sh")) vfs["/bin"].children.push("sh");
-
-    // Install edit
-    vfs["/bin/edit"] = { type: "executable", binary: editBytes, module: await WebAssembly.compile(editBytes), timestamp: Date.now() };
-    if (!vfs["/bin"].children.includes("edit")) vfs["/bin"].children.push("edit");
-
-    const coreutilsModule = await WebAssembly.compile(coreutilsBytes);
-    vfs["/bin/coreutils"] = { type: "executable", binary: coreutilsBytes, module: coreutilsModule };
-    vfs["/bin/ls"] = vfs["/bin/coreutils"];
-    vfs["/bin/cat"] = vfs["/bin/coreutils"];
-    vfs["/bin/echo"] = vfs["/bin/coreutils"];
-    vfs["/bin/mkdir"] = vfs["/bin/coreutils"];
-    vfs["/bin/rm"] = vfs["/bin/coreutils"];
-    vfs["/bin/touch"] = vfs["/bin/coreutils"];
-    vfs["/bin/pwd"] = vfs["/bin/coreutils"];
-    vfs["/bin/sort"] = vfs["/bin/coreutils"];
-    vfs["/bin/wc"] = vfs["/bin/coreutils"];
-    vfs["/bin/head"] = vfs["/bin/coreutils"];
-    vfs["/bin/tail"] = vfs["/bin/coreutils"];
+    // Compile any cached executables in the VFS
+    for (const path in vfs) {
+        const node = vfs[path];
+        if (node.type === "executable" && node.binary && !node.module) {
+            try {
+                node.module = await WebAssembly.compile(node.binary);
+            } catch (e) {
+                console.error("Failed to compile WebAssembly module for " + path, e);
+            }
+        }
+    }
     
     // Ensure bin is in root children
     const rootNode = vfs["/"];
@@ -1241,7 +1220,7 @@ async function bootstrap() {
     
     const binNode = vfs["/bin"];
     if (binNode) {
-        const apps = ["coreutils", "ls", "cat", "echo", "mkdir", "rm", "touch", "pwd", "sort", "wc", "head", "tail", "sh"];
+        const apps = ["coreutils", "ls", "cat", "echo", "mkdir", "rm", "touch", "pwd", "sort", "wc", "head", "tail", "sh", "edit"];
         for (let app of apps) {
             if (!binNode.children.includes(app)) {
                 binNode.children.push(app);
