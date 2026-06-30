@@ -7,6 +7,12 @@ pub struct ServiceRegistry {
     services: HashMap<String, ProcessId>,
 }
 
+impl Default for ServiceRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ServiceRegistry {
     pub fn new() -> Self {
         Self { services: HashMap::new() }

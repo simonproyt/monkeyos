@@ -119,9 +119,7 @@ fn main() {
     };
 
     let reader = BufReader::new(file);
-    for line in reader.lines() {
-        if let Ok(line) = line {
-            process_line(&line, &cwd);
-        }
+    for line in reader.lines().flatten() {
+        process_line(&line, &cwd);
     }
 }

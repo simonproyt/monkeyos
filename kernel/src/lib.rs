@@ -160,24 +160,36 @@ pub extern "C" fn kernel_new() -> *mut Kernel {
     Box::into_raw(Box::new(Kernel::new()))
 }
 
+/// # Safety
+/// The `kernel` pointer must be a valid, aligned, non-null pointer to a `Kernel` instance
+/// previously allocated by `kernel_new()`.
 #[no_mangle]
 pub unsafe extern "C" fn kernel_tick(kernel: *mut Kernel) {
     let k = unsafe { &mut *kernel };
     k.tick();
 }
 
+/// # Safety
+/// The `kernel` pointer must be a valid, aligned, non-null pointer to a `Kernel` instance
+/// previously allocated by `kernel_new()`.
 #[no_mangle]
 pub unsafe extern "C" fn kernel_push_mouse_move(kernel: *mut Kernel, x: i32, y: i32) {
     let k = unsafe { &mut *kernel };
     k.push_mouse_move(x, y);
 }
 
+/// # Safety
+/// The `kernel` pointer must be a valid, aligned, non-null pointer to a `Kernel` instance
+/// previously allocated by `kernel_new()`.
 #[no_mangle]
 pub unsafe extern "C" fn kernel_push_mouse_button(kernel: *mut Kernel, down: bool) {
     let k = unsafe { &mut *kernel };
     k.push_mouse_button(down);
 }
 
+/// # Safety
+/// The `kernel` pointer must be a valid, aligned, non-null pointer to a `Kernel` instance
+/// previously allocated by `kernel_new()`.
 #[no_mangle]
 pub unsafe extern "C" fn kernel_push_key_event(kernel: *mut Kernel, key_code: u32) {
     let k = unsafe { &mut *kernel };

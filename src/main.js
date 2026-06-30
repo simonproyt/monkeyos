@@ -186,7 +186,42 @@ async function initWebGPU() {
 async function bootstrap() {
     console.log("Loading WebAssembly Microkernel from disk...");
     
-    // VFS Implementation
+    // IndexedDB wrapper functions
+    function initIndexedDB() {
+        return new Promise((resolve, reject) => {
+            const request = indexedDB.open("MonkeyOS_DB", 1);
+            request.onupgradeneeded = (event) => {
+                const db = event.target.result;
+                if (!db.objectStoreNames.contains("vfs_store")) {
+                    db.createObjectStore("vfs_store");
+                }
+            };
+            request.onsuccess = (event) => resolve(event.target.result);
+            request.onerror = (event) => reject(event.target.error);
+        });
+    }
+
+    async function loadVfsFromDB(db) {
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction("vfs_store", "readonly");
+            const store = transaction.objectStore("vfs_store");
+            const request = store.get("vfs");
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+        });
+    }
+
+    function saveVfsToDB(db, vfsData) {
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction("vfs_store", "readwrite");
+            const store = transaction.objectStore("vfs_store");
+            const request = store.put(vfsData, "vfs");
+            request.onsuccess = () => resolve();
+            request.onerror = () => reject(request.error);
+        });
+    }
+
+    // Default VFS Implementation
     let vfs = {
         "/": { type: "dir", children: ["home", "etc", "usr", "var", "tmp"], timestamp: Date.now() },
         "/home": { type: "dir", children: ["monkey"], timestamp: Date.now() },
@@ -200,39 +235,103 @@ async function bootstrap() {
         "/tmp": { type: "dir", children: [], timestamp: Date.now() },
     };
 
-    const savedVfs = localStorage.getItem("monkeyos_vfs");
-    if (savedVfs) {
-        try {
-            vfs = JSON.parse(savedVfs);
-            // Retrofit timestamps to old nodes loaded from localStorage
+    let db;
+    try {
+        db = await initIndexedDB();
+        const savedVfs = await loadVfsFromDB(db);
+        if (savedVfs) {
+            vfs = savedVfs;
+            // Retrofit timestamps to old nodes if missing
             for (const path in vfs) {
                 if (!vfs[path].timestamp) {
                     vfs[path].timestamp = Date.now();
                 }
             }
-        } catch (e) {
-            console.error("Failed to parse VFS from local storage", e);
-        }
-    } else {
-        localStorage.setItem("monkeyos_vfs", JSON.stringify(vfs));
-    }
-
-    // Pre-fetch dynamic executables
-    try {
-        if (!vfs["/bin"]) {
-            vfs["/bin"] = { type: "dir", children: [] };
-            vfs["/"].children.push("bin");
-        }
-        const helloRes = await fetch("/bin/hello.wasm");
-        if (helloRes.ok) {
-            const helloBuf = await helloRes.arrayBuffer();
-            vfs["/bin/hello"] = { type: "executable", binary: helloBuf };
-            if (!vfs["/bin"].children.includes("hello")) {
-                vfs["/bin"].children.push("hello");
-            }
+        } else {
+            await saveVfsToDB(db, vfs);
         }
     } catch (e) {
-        console.error("Failed to fetch /bin/hello.wasm", e);
+        console.error("Failed to initialize IndexedDB for VFS", e);
+    }
+
+    // Pre-fetch dynamic executables (caching them to VFS)
+    try {
+        if (!vfs["/bin"]) {
+            vfs["/bin"] = { type: "dir", children: [], timestamp: Date.now() };
+            vfs["/"].children.push("bin");
+        }
+        
+        let shouldSaveVfs = false;
+        
+        // Example: caching hello.wasm
+        if (!vfs["/bin/hello"]) {
+            console.log("Fetching /bin/hello.wasm for the first time...");
+            const helloRes = await fetch("/bin/hello.wasm");
+            if (helloRes.ok) {
+                const helloBuf = await helloRes.arrayBuffer();
+                vfs["/bin/hello"] = { type: "executable", binary: helloBuf, timestamp: Date.now() };
+                if (!vfs["/bin"].children.includes("hello")) {
+                    vfs["/bin"].children.push("hello");
+                }
+                shouldSaveVfs = true;
+            }
+        }
+
+        // Example: caching sh.wasm
+        if (!vfs["/bin/sh"]) {
+            console.log("Fetching /bin/sh.wasm for the first time...");
+            const shRes = await fetch("/bin/sh.wasm");
+            if (shRes.ok) {
+                const shBuf = await shRes.arrayBuffer();
+                vfs["/bin/sh"] = { type: "executable", binary: shBuf, timestamp: Date.now() };
+                if (!vfs["/bin"].children.includes("sh")) {
+                    vfs["/bin"].children.push("sh");
+                }
+                shouldSaveVfs = true;
+            }
+        }
+
+        // Example: caching coreutils.wasm
+        if (!vfs["/bin/coreutils"]) {
+            console.log("Fetching /bin/coreutils.wasm for the first time...");
+            const coreutilsRes = await fetch("/bin/coreutils.wasm");
+            if (coreutilsRes.ok) {
+                const coreutilsBuf = await coreutilsRes.arrayBuffer();
+                vfs["/bin/coreutils"] = { type: "executable", binary: coreutilsBuf, timestamp: Date.now() };
+                if (!vfs["/bin"].children.includes("coreutils")) {
+                    vfs["/bin"].children.push("coreutils");
+                }
+                // create symlinks for coreutils commands
+                const cmds = ["ls", "cat", "echo", "pwd", "mkdir", "rm", "head", "tail", "wc", "sort", "touch"];
+                for (let cmd of cmds) {
+                    if (!vfs[`/bin/${cmd}`]) {
+                        vfs[`/bin/${cmd}`] = { type: "symlink", target: "/bin/coreutils", timestamp: Date.now() };
+                        vfs["/bin"].children.push(cmd);
+                    }
+                }
+                shouldSaveVfs = true;
+            }
+        }
+        
+        // Example: caching edit.wasm
+        if (!vfs["/bin/edit"]) {
+            console.log("Fetching /bin/edit.wasm for the first time...");
+            const editRes = await fetch("/bin/edit.wasm");
+            if (editRes.ok) {
+                const editBuf = await editRes.arrayBuffer();
+                vfs["/bin/edit"] = { type: "executable", binary: editBuf, timestamp: Date.now() };
+                if (!vfs["/bin"].children.includes("edit")) {
+                    vfs["/bin"].children.push("edit");
+                }
+                shouldSaveVfs = true;
+            }
+        }
+        
+        if (shouldSaveVfs && db) {
+            await saveVfsToDB(db, vfs);
+        }
+    } catch (e) {
+        console.error("Failed to fetch binary executables", e);
     }
 
     window.__WASI_FDS = new Map();
@@ -254,8 +353,13 @@ async function bootstrap() {
         return path.replace(/\/+/g, "/").replace(/\/$/, "") || "/";
     }
 
+    let saveVfsTimeout = null;
     function saveVfs() {
-        localStorage.setItem("monkeyos_vfs", JSON.stringify(vfs));
+        if (!db) return;
+        if (saveVfsTimeout) clearTimeout(saveVfsTimeout);
+        saveVfsTimeout = setTimeout(() => {
+            saveVfsToDB(db, vfs).catch(e => console.error("Async VFS save failed", e));
+        }, 1000); // 1 second debounce
     }
 
     const wasi_snapshot_preview1 = new Proxy({}, {

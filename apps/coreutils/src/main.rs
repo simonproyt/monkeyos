@@ -12,7 +12,7 @@ fn main() {
     }
 
     let program_path = args[0].to_string_lossy();
-    let program = program_path.split('/').last().unwrap_or(&program_path);
+    let program = program_path.split('/').next_back().unwrap_or(&program_path);
 
     match program {
         "ls" => {
