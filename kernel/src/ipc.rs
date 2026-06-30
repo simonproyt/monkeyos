@@ -3,8 +3,6 @@ use crate::process::ProcessId;
 
 #[derive(Clone, Debug)]
 pub enum MessagePayload {
-    Ping,
-    Pong,
     DrawRect { x: i32, y: i32, w: i32, h: i32 },
     ClearScreen,
     MouseMove { x: i32, y: i32 },
@@ -40,11 +38,17 @@ impl IpcBus {
     pub fn send(&mut self, msg: Message) {
         self.mailboxes
             .entry(msg.receiver)
-            .or_insert_with(VecDeque::new)
+            .or_default()
             .push_back(msg);
     }
 
     pub fn receive(&mut self, pid: ProcessId) -> Option<Message> {
         self.mailboxes.get_mut(&pid).and_then(|queue| queue.pop_front())
+    }
+}
+
+impl Default for IpcBus {
+    fn default() -> Self {
+        Self::new()
     }
 }

@@ -24,7 +24,15 @@ impl ProcessManager {
             next_pid: 1,
         }
     }
+}
 
+impl Default for ProcessManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ProcessManager {
     pub fn spawn<F>(&mut self, constructor: F) -> ProcessId
     where
         F: FnOnce(ProcessId) -> Box<dyn Process>,

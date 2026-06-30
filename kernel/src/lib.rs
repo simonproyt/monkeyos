@@ -4,7 +4,6 @@ pub mod services;
 pub mod sys;
 pub mod api;
 pub mod wasi;
-pub mod test_fs;
 
 use crate::process::{ProcessManager, ProcessId};
 use crate::ipc::{IpcBus, Message, MessagePayload};
@@ -31,9 +30,6 @@ pub struct Kernel {
     
     // Service PIDs
     input_pid: Option<ProcessId>,
-    vfs_pid: Option<ProcessId>,
-    display_pid: Option<ProcessId>,
-    wm_pid: Option<ProcessId>,
 }
 
 enum BootState {
@@ -55,9 +51,6 @@ impl Kernel {
             ipc: IpcBus::new(),
             registry: ServiceRegistry::new(),
             input_pid: None,
-            vfs_pid: None,
-            display_pid: None,
-            wm_pid: None,
         }
     }
 }
@@ -81,7 +74,6 @@ impl Kernel {
                 }
                 BootState::MountingVFS => {
                     let pid = self.pm.spawn(|pid| Box::new(VfsService::new(pid)));
-                    self.vfs_pid = Some(pid);
                     self.registry.register("vfs", pid);
                     log("[ OK ] Mounted Root Filesystem (/)");
                     self.state = BootState::InitIPC;
@@ -97,12 +89,10 @@ impl Kernel {
                     log("[ OK ] Started Input Server (ps2_mock)");
 
                     let display_pid = self.pm.spawn(|pid| Box::new(DisplayServer::new(pid)));
-                    self.display_pid = Some(display_pid);
                     self.registry.register("display", display_pid);
                     log("[ OK ] Started Display Server (WebGPU)");
 
                     let wm_pid = self.pm.spawn(|pid| Box::new(WindowManager::new(pid, display_pid)));
-                    self.wm_pid = Some(wm_pid);
                     self.registry.register("wm", wm_pid);
                     log("[ OK ] Started Window Manager (kwin_wayland_mock)");
                     

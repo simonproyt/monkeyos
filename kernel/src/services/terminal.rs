@@ -87,8 +87,6 @@ impl TerminalProcess {
             self.print(env, "\n");
         }
 
-
-
         if cmd.is_empty() {
             self.input_buffer.clear();
             self.cursor_pos = 0;
@@ -125,10 +123,7 @@ impl TerminalProcess {
                             filename = format!("{}/{}", self.cwd, filename);
                         }
                     }
-                    let mut file_content = String::new();
-                    if let Ok(existing) = std::fs::read_to_string(&filename) {
-                        file_content = existing;
-                    }
+                    let file_content = std::fs::read_to_string(&filename).unwrap_or_default();
                     self.edit_state = Some(filename);
                     self.input_buffer = file_content;
                     self.cursor_pos = self.input_buffer.len();
@@ -154,7 +149,7 @@ impl TerminalProcess {
 
                 let mut path_parts = Vec::new();
                 for part in base.split('/') {
-                    if part == "" || part == "." {
+                    if part.is_empty() || part == "." {
                         continue;
                     } else if part == ".." {
                         path_parts.pop();
@@ -182,7 +177,7 @@ impl TerminalProcess {
                 args_buf.push(0);
                 
                 unsafe {
-                    crate::wasi::CURRENT_TERMINAL_ID = self.window_id.clone();
+                    crate::wasi::CURRENT_TERMINAL_ID = self.window_id;
                 }
                 crate::wasi::call_sys_execve(&args_buf, &self.cwd, None, None);
                 unsafe {
@@ -220,16 +215,17 @@ impl Process for TerminalProcess {
         }
 
         while let Some(msg) = env.recv_msg() {
-            match msg.payload {
-                MessagePayload::KeyPress { key_code } => {
-                    if self.edit_state.is_some() {
-                        if key_code == 19 { // Ctrl+S
+            if let MessagePayload::KeyPress { key_code } = msg.payload {
+                if self.edit_state.is_some() {
+                    match key_code {
+                        19 => { // Ctrl+S
                             if let Some(ref filename) = self.edit_state {
                                 if let Err(_e) = std::fs::write(filename, &self.input_buffer) {
                                     // ignore for now or print error
                                 }
                             }
-                        } else if key_code == 17 { // Ctrl+Q
+                        }
+                        17 => { // Ctrl+Q
                             self.edit_state = None;
                             self.input_buffer.clear();
                             self.cursor_pos = 0;
@@ -238,26 +234,29 @@ impl Process for TerminalProcess {
                                     env.send_msg(display_pid, MessagePayload::ClearHtmlOverlayText { id });
                                 }
                             }
-                            self.print(env, "
-");
+                            self.print(env, "\n");
                             self.print(env, &self.prompt);
                             self.redraw_input_line(env);
-                        } else if key_code == 13 { // Enter
+                        }
+                        13 => { // Enter
                             self.input_buffer.insert(self.cursor_pos, '\n');
                             self.cursor_pos += 1;
                             self.redraw_editor(env);
-                        } else if key_code == 8 { // Backspace
+                        }
+                        8 => { // Backspace
                             if self.cursor_pos > 0 {
                                 self.cursor_pos -= 1;
                                 self.input_buffer.remove(self.cursor_pos);
                                 self.redraw_editor(env);
                             }
-                        } else if key_code == 1037 { // ArrowLeft
+                        }
+                        1037 => { // ArrowLeft
                             if self.cursor_pos > 0 {
                                 self.cursor_pos -= 1;
                                 self.redraw_editor(env);
                             }
-                        } else if key_code == 1038 { // ArrowUp
+                        }
+                        1038 => { // ArrowUp
                             let mut prev_newline = 0;
                             let mut line_start = 0;
                             let mut col = 0;
@@ -279,7 +278,8 @@ impl Process for TerminalProcess {
                                 }
                                 self.redraw_editor(env);
                             }
-                        } else if key_code == 1040 { // ArrowDown
+                        }
+                        1040 => { // ArrowDown
                             let mut col = 0;
                             for (i, c) in self.input_buffer.chars().enumerate() {
                                 if i == self.cursor_pos { break; }
@@ -299,50 +299,61 @@ impl Process for TerminalProcess {
                                 self.cursor_pos = new_pos;
                                 self.redraw_editor(env);
                             }
-                        } else if key_code == 46 { // Delete
+                        }
+                        46 => { // Delete
                             if self.cursor_pos < self.input_buffer.len() {
                                 self.input_buffer.remove(self.cursor_pos);
                                 self.redraw_editor(env);
                             }
-                        } else if key_code == 1039 { // ArrowRight
+                        }
+                        1039 => { // ArrowRight
                             if self.cursor_pos < self.input_buffer.len() {
                                 self.cursor_pos += 1;
                                 self.redraw_editor(env);
                             }
-                        } else if (32..=126).contains(&key_code) {
-                            let c = (key_code as u8) as char;
+                        }
+                        code if (32..=126).contains(&code) => {
+                            let c = (code as u8) as char;
                             self.input_buffer.insert(self.cursor_pos, c);
                             self.cursor_pos += 1;
                             self.redraw_editor(env);
                         }
-                    } else {
-                        // NORMAL TERMINAL MODE
-                        if key_code == 13 { // Enter
+                        _ => {}
+                    }
+                } else {
+                    // NORMAL TERMINAL MODE
+                    match key_code {
+                        13 => { // Enter
                             self.execute_command(env);
-                        } else if key_code == 8 { // Backspace
+                        }
+                        8 => { // Backspace
                             if self.cursor_pos > 0 {
                                 self.cursor_pos -= 1;
                                 self.input_buffer.remove(self.cursor_pos);
                                 self.redraw_input_line(env);
                             }
-                        } else if key_code == 1037 { // ArrowLeft
+                        }
+                        1037 => { // ArrowLeft
                             if self.cursor_pos > 0 {
                                 self.cursor_pos -= 1;
                                 self.redraw_input_line(env);
                             }
-                        } else if key_code == 1039 { // ArrowRight
+                        }
+                        1039 => { // ArrowRight
                             if self.cursor_pos < self.input_buffer.len() {
                                 self.cursor_pos += 1;
                                 self.redraw_input_line(env);
                             }
-                        } else if key_code == 1038 { // ArrowUp
+                        }
+                        1038 => { // ArrowUp
                             if !self.history.is_empty() && self.history_index > 0 {
                                 self.history_index -= 1;
                                 self.input_buffer = self.history[self.history_index].clone();
                                 self.cursor_pos = self.input_buffer.len();
                                 self.redraw_input_line(env);
                             }
-                        } else if key_code == 1040 { // ArrowDown
+                        }
+                        1040 => { // ArrowDown
                             if self.history_index < self.history.len() {
                                 self.history_index += 1;
                                 if self.history_index == self.history.len() {
@@ -353,15 +364,16 @@ impl Process for TerminalProcess {
                                 self.cursor_pos = self.input_buffer.len();
                                 self.redraw_input_line(env);
                             }
-                        } else if (32..=126).contains(&key_code) {
-                            let c = (key_code as u8) as char;
+                        }
+                        code if (32..=126).contains(&code) => {
+                            let c = (code as u8) as char;
                             self.input_buffer.insert(self.cursor_pos, c);
                             self.cursor_pos += 1;
                             self.redraw_input_line(env);
                         }
+                        _ => {}
                     }
                 }
-                _ => {}
             }
         }
 

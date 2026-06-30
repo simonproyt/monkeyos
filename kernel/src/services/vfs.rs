@@ -1,18 +1,13 @@
 use crate::process::{Process, ProcessId};
 use crate::sys::SyscallEnv;
-use std::collections::HashMap;
 
 pub struct VfsService {
     pid: ProcessId,
-    // In-memory filesystem mock
-    _files: HashMap<String, String>,
 }
 
 impl VfsService {
     pub fn new(pid: ProcessId) -> Self {
-        let mut _files = HashMap::new();
-        _files.insert("/etc/hostname".to_string(), "monkeyos".to_string());
-        Self { pid, _files }
+        Self { pid }
     }
 }
 

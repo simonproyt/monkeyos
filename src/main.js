@@ -2,26 +2,23 @@
 
 window.__WASI_PROXY = {
     kernel: null,
-    fd_write: function(fd, iovs_ptr, iovs_len, nwritten_ptr) {
-        if (this.kernel && this.kernel.sys_fd_write) {
-            return this.kernel.sys_fd_write(fd, iovs_ptr, iovs_len, nwritten_ptr);
-        }
-        return 0; // Success
-    },
-    fd_read: function(fd, iovs_ptr, iovs_len, nread_ptr) {
-        if (this.kernel && this.kernel.sys_fd_read) {
-            return this.kernel.sys_fd_read(fd, iovs_ptr, iovs_len, nread_ptr);
-        }
-        return 0;
-    }
 };
 
-export function wasi_print_js(id, text) {
+function wasi_print_js(id, text) {
     if (id !== 0) {
         append_html_overlay_text_js(id, text);
     } else {
         console.log("WASI OUT:", text);
     }
+}
+
+function escapeHtml(str) {
+    return str
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
 }
 
 // Redirect console.log to our boot screen
@@ -272,7 +269,7 @@ async function bootstrap() {
         
         let shouldSaveVfs = false;
         
-        // Example: caching hello.wasm
+        // Cache hello.wasm
         if (!vfs["/bin/hello"]) {
             console.log("Fetching /bin/hello.wasm for the first time...");
             const helloRes = await fetch("/bin/hello.wasm");
@@ -286,7 +283,7 @@ async function bootstrap() {
             }
         }
 
-        // Example: caching sh.wasm
+        // Cache sh.wasm
         if (!vfs["/bin/sh"]) {
             console.log("Fetching /bin/sh.wasm for the first time...");
             const shRes = await fetch("/bin/sh.wasm");
@@ -300,7 +297,7 @@ async function bootstrap() {
             }
         }
 
-        // Example: caching coreutils.wasm
+        // Cache coreutils.wasm
         if (!vfs["/bin/coreutils"]) {
             console.log("Fetching /bin/coreutils.wasm for the first time...");
             const coreutilsRes = await fetch("/bin/coreutils.wasm");
@@ -322,7 +319,7 @@ async function bootstrap() {
             }
         }
         
-        // Example: caching edit.wasm
+        // Cache edit.wasm
         if (!vfs["/bin/edit"]) {
             console.log("Fetching /bin/edit.wasm for the first time...");
             const editRes = await fetch("/bin/edit.wasm");
@@ -360,6 +357,14 @@ async function bootstrap() {
 
     function getVfsPath(path) {
         return path.replace(/\/+/g, "/").replace(/\/$/, "") || "/";
+    }
+
+    function getEnvs(cwd) {
+        const tzOffsetMins = new Date().getTimezoneOffset();
+        const tzOffsetHours = tzOffsetMins / 60;
+        const sign = tzOffsetHours > 0 ? "+" : "";
+        const tzStr = "TZ=UTC" + sign + tzOffsetHours;
+        return ["PWD=" + cwd, "USER=root", tzStr];
     }
 
     let saveVfsTimeout = null;
@@ -528,21 +533,14 @@ async function bootstrap() {
                 };
             }
             if (prop === 'proc_exit') {
-                return function(code) { console.log("WASI proc_exit:", code); return 0; };
+                return function(code) { return 0; };
             }
             if (prop === 'environ_sizes_get') {
                 return function(environ_count_ptr, environ_size_ptr) {
                     if (window.__WASI_PROXY.wasm) {
                         const view = new DataView(window.__WASI_PROXY.wasm.exports.memory.buffer);
                         const cwd = window.__WASI_PROXY.current_cwd || "/";
-                        
-                        // Calculate POSIX TZ string
-                        const tzOffsetMins = new Date().getTimezoneOffset();
-                        const tzOffsetHours = tzOffsetMins / 60;
-                        const sign = tzOffsetHours > 0 ? "+" : "";
-                        const tzStr = "TZ=UTC" + sign + tzOffsetHours;
-                        
-                        const envs = ["PWD=" + cwd, "USER=root", tzStr];
+                        const envs = getEnvs(cwd);
                         let totalLen = 0;
                         for (let e of envs) totalLen += e.length + 1; // +1 for null byte
                         
@@ -558,14 +556,7 @@ async function bootstrap() {
                         const view = new DataView(window.__WASI_PROXY.wasm.exports.memory.buffer);
                         const memory = new Uint8Array(window.__WASI_PROXY.wasm.exports.memory.buffer);
                         const cwd = window.__WASI_PROXY.current_cwd || "/";
-                        
-                        // Calculate POSIX TZ string
-                        const tzOffsetMins = new Date().getTimezoneOffset();
-                        const tzOffsetHours = tzOffsetMins / 60;
-                        const sign = tzOffsetHours > 0 ? "+" : "";
-                        const tzStr = "TZ=UTC" + sign + tzOffsetHours;
-                        
-                        const envs = ["PWD=" + cwd, "USER=root", tzStr];
+                        const envs = getEnvs(cwd);
                         
                         let current_buf_ptr = environ_buf_ptr;
                         let current_ptr = environ_ptr;
@@ -894,40 +885,6 @@ async function bootstrap() {
                     return 0; // SUCCESS
                 };
             }
-            if (prop === 'fd_read') {
-                return function(fd, iovs_ptr, iovs_len, nread_ptr) {
-                    const openFd = window.__WASI_FDS.get(fd);
-                    if (!openFd) return 8; // EBADF
-                    const node = vfs[openFd.path];
-                    if (!node || node.type !== "file") return 8; // EBADF
-
-                    if (window.__WASI_PROXY.wasm) {
-                        const view = new DataView(window.__WASI_PROXY.wasm.exports.memory.buffer);
-                        const memory = new Uint8Array(window.__WASI_PROXY.wasm.exports.memory.buffer);
-                        
-                        let totalRead = 0;
-                        const available = Math.max(0, node.content.length - openFd.offset);
-                        
-                        for (let i = 0; i < iovs_len; i++) {
-                            const iov_ptr = iovs_ptr + i * 8;
-                            const buf_ptr = view.getUint32(iov_ptr, true);
-                            const buf_len = view.getUint32(iov_ptr + 4, true);
-                            
-                            let toRead = Math.min(buf_len, available - totalRead);
-                            for (let j = 0; j < toRead; j++) {
-                                memory[buf_ptr + j] = node.content.charCodeAt(openFd.offset + totalRead + j);
-                            }
-                            totalRead += toRead;
-                            if (totalRead >= available) break;
-                        }
-                        
-                        openFd.offset += totalRead;
-                        view.setUint32(nread_ptr, totalRead, true);
-                        return 0; // SUCCESS
-                    }
-                    return 8; // EBADF
-                };
-            }
             if (prop === 'path_readlink') {
                 return function(fd, path_ptr, path_len, buf_ptr, buf_len, bufused_ptr) {
                     return 28; // EINVAL (not a symlink)
@@ -1212,23 +1169,6 @@ async function bootstrap() {
         }
     }
     
-    // Ensure bin is in root children
-    const rootNode = vfs["/"];
-    if (!rootNode.children.includes("bin")) {
-        rootNode.children.push("bin");
-    }
-    
-    const binNode = vfs["/bin"];
-    if (binNode) {
-        const apps = ["coreutils", "ls", "cat", "echo", "mkdir", "rm", "touch", "pwd", "sort", "wc", "head", "tail", "sh", "edit"];
-        for (let app of apps) {
-            if (!binNode.children.includes(app)) {
-                binNode.children.push(app);
-            }
-        }
-    }
-    saveVfs();
-    
     window.__WASI_PROXY.wasm = result.instance; // Must be set before any Rust code runs!
     wasmInstance = result.instance;
     const exports = wasmInstance.exports;
@@ -1292,6 +1232,8 @@ async function bootstrap() {
             kernel.push_key_event(1040);
         }
     });
+
+    console.log = originalLog;
 }
 
 // HTML Overlay API for the Kernel
@@ -1349,7 +1291,6 @@ window.update_html_overlay_pos_js = function(id, x, y) {
 };
 
 window.append_html_overlay_text_js = function(id, text) {
-    console.log("APPENDING:", JSON.stringify(text));
     const div = document.getElementById('overlay-' + id);
     if (div) {
         let newText = div.textContent;
@@ -1370,16 +1311,6 @@ window.append_html_overlay_text_js = function(id, text) {
 window.update_html_overlay_input_line_js = function(id, prompt, input, cursor_pos) {
     const div = document.getElementById('overlay-' + id);
     
-    // HTML Escape function
-    const escapeHtml = (unsafe) => {
-        return unsafe
-             .replace(/&/g, "&amp;")
-             .replace(/</g, "&lt;")
-             .replace(/>/g, "&gt;")
-             .replace(/"/g, "&quot;")
-             .replace(/'/g, "&#039;");
-    };
-
     let beforeCursor = escapeHtml(input.substring(0, cursor_pos));
     let cursorChar = escapeHtml(input.substring(cursor_pos, cursor_pos + 1) || ' ');
     let afterCursor = escapeHtml(input.substring(cursor_pos + 1));
@@ -1405,15 +1336,6 @@ window.draw_editor_js = function(id, content, cursor_pos) {
     const div = document.getElementById('overlay-' + id);
     if (!div) return;
 
-    const escapeHtml = (unsafe) => {
-        return unsafe
-             .replace(/&/g, "&amp;")
-             .replace(/</g, "&lt;")
-             .replace(/>/g, "&gt;")
-             .replace(/"/g, "&quot;")
-             .replace(/'/g, "&#039;");
-    };
-
     let beforeCursor = escapeHtml(content.substring(0, cursor_pos));
     
     let cursorCharStr = content.substring(cursor_pos, cursor_pos + 1);
@@ -1436,7 +1358,6 @@ window.clear_html_overlay_text_js = function(id) {
     const div = document.getElementById('overlay-' + id);
     if (div) {
         div.innerHTML = '';
-        div.textContent = '';
     } else {
         pendingText[id] = '';
         delete pendingLastLine[id];

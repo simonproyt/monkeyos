@@ -11,10 +11,7 @@ fn main() {
 
     let filename = &args[1];
 
-    let mut content = String::new();
-    if let Ok(existing) = std::fs::read_to_string(filename) {
-        content = existing;
-    }
+    let content = std::fs::read_to_string(filename).unwrap_or_default();
 
     println!("Editing: {}", filename);
     if !content.is_empty() {
