@@ -29,10 +29,8 @@ impl Process for InputServer {
                         env.send_msg(wm_pid, MessagePayload::MouseButton { down });
                     }
                     MessagePayload::KeyPress { key_code } => {
-                        // Forward keystrokes directly to the terminal process
-                        if let Some(term_pid) = env.lookup_service("terminal") {
-                            env.send_msg(term_pid, MessagePayload::KeyPress { key_code });
-                        }
+                        // Forward keystrokes to the Window Manager, which routes to the active window
+                        env.send_msg(wm_pid, MessagePayload::KeyPress { key_code });
                     }
                     _ => {}
                 }

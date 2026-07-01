@@ -4,7 +4,7 @@ use std::io::{BufRead, BufReader};
 
 #[link(wasm_import_module = "env")]
 unsafe extern "C" {
-    fn sys_execve(args_ptr: *const u8, args_len: usize, cwd_ptr: *const u8, cwd_len: usize, stdin_ptr: *const u8, stdin_len: usize, stdout_ptr: *const u8, stdout_len: usize) -> i32;
+    fn sys_execve(args_ptr: *const u8, args_len: usize, cwd_ptr: *const u8, cwd_len: usize, stdin_ptr: *const u8, stdin_len: usize, stdout_ptr: *const u8, stdout_len: usize, terminal_id: u32) -> i32;
 }
 
 fn call_sys_execve(args_buf: &[u8], cwd: &str, stdin: Option<&str>, stdout: Option<&str>) -> i32 {
@@ -15,7 +15,8 @@ fn call_sys_execve(args_buf: &[u8], cwd: &str, stdin: Option<&str>, stdout: Opti
             args_buf.as_ptr(), args_buf.len(), 
             cwd.as_ptr(), cwd.len(),
             stdin_str.as_ptr(), stdin_str.len(),
-            stdout_str.as_ptr(), stdout_str.len()
+            stdout_str.as_ptr(), stdout_str.len(),
+            0
         ) 
     }
 }

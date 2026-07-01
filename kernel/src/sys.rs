@@ -31,6 +31,7 @@ pub struct SyscallEnv<'a> {
     pub pid: ProcessId,
     pub ipc: &'a mut IpcBus,
     pub registry: &'a ServiceRegistry,
+    pub spawn_requests: &'a mut Vec<String>,
 }
 
 impl<'a> SyscallEnv<'a> {
@@ -43,11 +44,14 @@ impl<'a> SyscallEnv<'a> {
     }
 
     pub fn recv_msg(&mut self) -> Option<Message> {
-        // Return the full Message so the receiver knows the sender PID
         self.ipc.receive(self.pid)
     }
 
     pub fn lookup_service(&self, name: &str) -> Option<ProcessId> {
         self.registry.lookup(name)
+    }
+
+    pub fn spawn_process(&mut self, name: &str) {
+        self.spawn_requests.push(name.to_string());
     }
 }

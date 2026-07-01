@@ -3,17 +3,21 @@ use crate::process::ProcessId;
 
 #[derive(Clone, Debug)]
 pub enum MessagePayload {
-    DrawRect { x: i32, y: i32, w: i32, h: i32 },
+    CreateWindow { id: u32, x: i32, y: i32, w: i32, h: i32, title: String, owner: ProcessId },
+    DrawRect { x: i32, y: i32, w: i32, h: i32, r: f32, g: f32, b: f32, a: f32, radius: f32, shadow_blur: f32 },
     ClearScreen,
+    ScreenSizeChanged { w: i32, h: i32 },
     MouseMove { x: i32, y: i32 },
     MouseButton { down: bool },
     KeyPress { key_code: u32 },
     CreateHtmlOverlay { id: u32, x: i32, y: i32, w: i32, h: i32 },
-    UpdateHtmlOverlayPos { id: u32, x: i32, y: i32 },
+    DestroyHtmlOverlay { id: u32 },
+    UpdateHtmlOverlayBounds { id: u32, x: i32, y: i32, w: i32, h: i32, z: u32 },
     AppendHtmlOverlayText { id: u32, text: String },
     UpdateHtmlOverlayInputLine { id: u32, prompt: String, input: String, cursor_pos: u32 },
     ClearHtmlOverlayText { id: u32 },
     DrawEditor { id: u32, content: String, cursor_pos: u32 },
+    WindowClosed { id: u32 },
     // Other syscalls / service messages will go here
 }
 

@@ -45,14 +45,30 @@ impl ProcessManager {
     }
 
     pub fn tick_all(&mut self, ipc: &mut IpcBus, registry: &ServiceRegistry) {
+        let mut spawn_queue = Vec::new();
+
         // Tick all processes, retaining only those that haven't exited
         self.processes.retain_mut(|p| {
-            let mut env = SyscallEnv {
-                pid: p.id(),
-                ipc,
-                registry,
+            let mut spawn_requests = Vec::new();
+            let keep = {
+                let mut env = SyscallEnv {
+                    pid: p.id(),
+                    ipc,
+                    registry,
+                    spawn_requests: &mut spawn_requests,
+                };
+                p.tick(&mut env)
             };
-            p.tick(&mut env)
+            spawn_queue.extend(spawn_requests);
+            keep
         });
+
+        // Handle spawns
+        for name in spawn_queue {
+            if name == "terminal" {
+                self.spawn(|pid| Box::new(crate::services::terminal::TerminalProcess::new(pid)));
+            }
+            // we could support more processes here
+        }
     }
 }

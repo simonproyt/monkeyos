@@ -30,6 +30,10 @@ pub struct Kernel {
     
     // Service PIDs
     input_pid: Option<ProcessId>,
+    
+    // Screen size
+    screen_w: i32,
+    screen_h: i32,
 }
 
 enum BootState {
@@ -51,6 +55,8 @@ impl Kernel {
             ipc: IpcBus::new(),
             registry: ServiceRegistry::new(),
             input_pid: None,
+            screen_w: 1024,
+            screen_h: 768,
         }
     }
 }
@@ -92,7 +98,7 @@ impl Kernel {
                     self.registry.register("display", display_pid);
                     log("[ OK ] Started Display Server (WebGPU)");
 
-                    let wm_pid = self.pm.spawn(|pid| Box::new(WindowManager::new(pid, display_pid)));
+                    let wm_pid = self.pm.spawn(|pid| Box::new(WindowManager::new(pid, display_pid, self.screen_w, self.screen_h)));
                     self.registry.register("wm", wm_pid);
                     log("[ OK ] Started Window Manager (kwin_wayland_mock)");
                     
@@ -136,6 +142,18 @@ impl Kernel {
                 sender: 0,
                 receiver: pid,
                 payload: MessagePayload::KeyPress { key_code },
+            });
+        }
+    }
+
+    pub fn push_screen_size(&mut self, w: i32, h: i32) {
+        self.screen_w = w;
+        self.screen_h = h;
+        if let Some(pid) = self.registry.lookup("wm") {
+            self.ipc.send(Message {
+                sender: 0,
+                receiver: pid,
+                payload: MessagePayload::ScreenSizeChanged { w, h },
             });
         }
     }
@@ -184,6 +202,15 @@ pub unsafe extern "C" fn kernel_push_mouse_button(kernel: *mut Kernel, down: boo
 pub unsafe extern "C" fn kernel_push_key_event(kernel: *mut Kernel, key_code: u32) {
     let k = unsafe { &mut *kernel };
     k.push_key_event(key_code);
+}
+
+/// # Safety
+/// The `kernel` pointer must be a valid, aligned, non-null pointer to a `Kernel` instance
+/// previously allocated by `kernel_new()`.
+#[no_mangle]
+pub unsafe extern "C" fn kernel_push_screen_size(kernel: *mut Kernel, w: i32, h: i32) {
+    let k = unsafe { &mut *kernel };
+    k.push_screen_size(w, h);
 }
 
 #[no_mangle]

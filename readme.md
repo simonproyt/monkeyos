@@ -1,7 +1,7 @@
 MonkeyOS - An experimental webos that uses the wasm runtime and rust to work
 
 ## Whats working
-- basic filesystem
+- basic filesystem that is backed by indexdb and supports the caching of wasm binaries
 - basic process management
 - a basic shell with rust uutils backed commands and unix pipes support
 - a cli text editor

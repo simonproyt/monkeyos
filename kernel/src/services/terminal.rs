@@ -1,6 +1,5 @@
 use crate::process::{Process, ProcessId};
 use crate::sys::SyscallEnv;
-use crate::api::window;
 use crate::ipc::MessagePayload;
 
 pub struct TerminalProcess {
@@ -179,7 +178,7 @@ impl TerminalProcess {
                 unsafe {
                     crate::wasi::CURRENT_TERMINAL_ID = self.window_id;
                 }
-                crate::wasi::call_sys_execve(&args_buf, &self.cwd, None, None);
+                crate::wasi::call_sys_execve(&args_buf, &self.cwd, None, None, self.window_id.unwrap_or(0));
                 unsafe {
                     crate::wasi::CURRENT_TERMINAL_ID = None;
                 }
@@ -203,8 +202,8 @@ impl Process for TerminalProcess {
 
     fn tick(&mut self, env: &mut SyscallEnv) -> bool {
         if !self.launched {
-            if let Some(_handle) = window::create_window(env, 100, 100, 600, 400) {
-                self.window_id = Some(1);
+            if let Some(handle) = crate::api::window::create_window(env, 100, 100, 600, 400, "Terminal") {
+                self.window_id = Some(handle.id);
                 
                 self.print(env, "MonkeyOS Terminal v0.1\nType 'help' for commands.\n\n");
                 self.print(env, &self.prompt);
@@ -215,9 +214,10 @@ impl Process for TerminalProcess {
         }
 
         while let Some(msg) = env.recv_msg() {
-            if let MessagePayload::KeyPress { key_code } = msg.payload {
-                if self.edit_state.is_some() {
-                    match key_code {
+            match msg.payload {
+                MessagePayload::KeyPress { key_code } => {
+                    if self.edit_state.is_some() {
+                        match key_code {
                         19 => { // Ctrl+S
                             if let Some(ref filename) = self.edit_state {
                                 if let Err(_e) = std::fs::write(filename, &self.input_buffer) {
@@ -374,6 +374,13 @@ impl Process for TerminalProcess {
                         _ => {}
                     }
                 }
+                }
+                MessagePayload::WindowClosed { id } => {
+                    if Some(id) == self.window_id {
+                        self.window_id = None;
+                    }
+                }
+                _ => {}
             }
         }
 

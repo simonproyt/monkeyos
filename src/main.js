@@ -56,6 +56,9 @@ async function initWebGPU() {
     function resizeCanvas() {
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
+        if (window.__WASI_PROXY && window.__WASI_PROXY.kernel) {
+            window.__WASI_PROXY.kernel.push_screen_size(canvas.width, canvas.height);
+        }
     }
     window.addEventListener('resize', resizeCanvas);
     resizeCanvas();
@@ -75,15 +78,62 @@ async function initWebGPU() {
 
       struct VertexInput {
         @location(0) position: vec2<f32>,
+        @location(1) color: vec4<f32>,
+        @location(2) rect_pos: vec2<f32>,
+        @location(3) rect_size: vec2<f32>,
+        @location(4) radius: f32,
+        @location(5) shadow_blur: f32,
       }
 
-      @vertex fn vs(input: VertexInput) -> @builtin(position) vec4<f32> {
+      struct VertexOutput {
+        @builtin(position) position: vec4<f32>,
+        @location(0) color: vec4<f32>,
+        @location(1) rect_pos: vec2<f32>,
+        @location(2) rect_size: vec2<f32>,
+        @location(3) radius: f32,
+        @location(4) shadow_blur: f32,
+        @location(5) pixel_pos: vec2<f32>,
+      }
+
+      @vertex fn vs(input: VertexInput) -> VertexOutput {
+        var output: VertexOutput;
         let normalized = (input.position / uniforms.screen_size) * 2.0 - 1.0;
-        return vec4<f32>(normalized.x, -normalized.y, 0.0, 1.0); // WebGPU Y is up
+        output.position = vec4<f32>(normalized.x, -normalized.y, 0.0, 1.0); // WebGPU Y is up
+        output.color = input.color;
+        output.rect_pos = input.rect_pos;
+        output.rect_size = input.rect_size;
+        output.radius = input.radius;
+        output.shadow_blur = input.shadow_blur;
+        output.pixel_pos = input.position;
+        return output;
       }
 
-      @fragment fn fs() -> @location(0) vec4<f32> {
-        return vec4<f32>(1.0, 0.3, 0.8, 1.0); // Hot pink window
+      @fragment fn fs(input: VertexOutput) -> @location(0) vec4<f32> {
+          let half_size = input.rect_size * 0.5;
+          let center = input.rect_pos + half_size;
+          let p = input.pixel_pos - center;
+          
+          let b = half_size - vec2<f32>(input.radius);
+          let q = abs(p) - b;
+          let dist = length(max(q, vec2<f32>(0.0))) + min(max(q.x, q.y), 0.0) - input.radius;
+          
+          var final_color = vec4<f32>(0.0);
+          let rect_alpha = 1.0 - smoothstep(-0.5, 0.5, dist);
+          
+          if (input.shadow_blur > 0.0) {
+              let shadow_dist = max(0.0, dist);
+              let shadow_alpha = exp(-shadow_dist * shadow_dist / (input.shadow_blur * input.shadow_blur)) * 0.5 * input.color.a;
+              let shadow_color = vec4<f32>(0.0, 0.0, 0.0, shadow_alpha);
+              final_color = mix(shadow_color, input.color, rect_alpha);
+          } else {
+              final_color = vec4<f32>(input.color.rgb, input.color.a * rect_alpha);
+          }
+          
+          if (final_color.a < 0.001) {
+              discard;
+          }
+          
+          return vec4<f32>(final_color.rgb * final_color.a, final_color.a);
       }
     `;
 
@@ -95,14 +145,27 @@ async function initWebGPU() {
             module: shaderModule,
             entryPoint: "vs",
             buffers: [{
-                arrayStride: 8,
-                attributes: [{ shaderLocation: 0, offset: 0, format: "float32x2" }]
+                arrayStride: 48,
+                attributes: [
+                    { shaderLocation: 0, offset: 0, format: "float32x2" },
+                    { shaderLocation: 1, offset: 8, format: "float32x4" },
+                    { shaderLocation: 2, offset: 24, format: "float32x2" },
+                    { shaderLocation: 3, offset: 32, format: "float32x2" },
+                    { shaderLocation: 4, offset: 40, format: "float32" },
+                    { shaderLocation: 5, offset: 44, format: "float32" }
+                ]
             }]
         },
         fragment: {
             module: shaderModule,
             entryPoint: "fs",
-            targets: [{ format: presentationFormat }]
+            targets: [{ 
+                format: presentationFormat,
+                blend: {
+                    color: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+                    alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' }
+                }
+            }]
         },
         primitive: { topology: "triangle-list" }
     });
@@ -118,8 +181,8 @@ async function initWebGPU() {
     });
 
     let rectsToDraw = [];
-    window.draw_rect_js = function(x, y, w, h) {
-        rectsToDraw.push({x, y, w, h});
+    window.draw_rect_js = function(x, y, w, h, r, g, b, a, radius = 0.0, shadow_blur = 0.0) {
+        rectsToDraw.push({x, y, w, h, r, g, b, a, radius, shadow_blur});
     };
 
     window.clear_screen_js = function() {
@@ -132,18 +195,44 @@ async function initWebGPU() {
     function renderWebGPU() {
         if (rectsToDraw.length === 0) return;
 
+        const bootConsole = document.getElementById('boot-console');
+        if (bootConsole && bootConsole.style.display !== 'none') {
+            bootConsole.style.display = 'none';
+        }
+
         device.queue.writeBuffer(uniformBuffer, 0, new Float32Array([canvas.width, canvas.height]));
 
-        const vertices = new Float32Array(rectsToDraw.length * 6 * 2);
+        const vertices = new Float32Array(rectsToDraw.length * 6 * 12);
         for (let i = 0; i < rectsToDraw.length; i++) {
-            const r = rectsToDraw[i];
-            const idx = i * 12;
-            vertices[idx] = r.x;       vertices[idx+1] = r.y;
-            vertices[idx+2] = r.x+r.w; vertices[idx+3] = r.y;
-            vertices[idx+4] = r.x;     vertices[idx+5] = r.y+r.h;
-            vertices[idx+6] = r.x+r.w; vertices[idx+7] = r.y;
-            vertices[idx+8] = r.x+r.w; vertices[idx+9] = r.y+r.h;
-            vertices[idx+10]= r.x;     vertices[idx+11]= r.y+r.h;
+            const rect = rectsToDraw[i];
+            const idx = i * 72;
+            const r = rect.r, g = rect.g, b = rect.b, a = rect.a;
+            
+            // Inflate geometry bounds to include the shadow blur margin
+            const padding = rect.shadow_blur * 2.0;
+            const px = rect.x - padding;
+            const py = rect.y - padding;
+            const pw = rect.w + padding * 2.0;
+            const ph = rect.h + padding * 2.0;
+
+            const pushVertex = (vIdx, vx, vy) => {
+                vertices[idx + vIdx*12 + 0] = vx; vertices[idx + vIdx*12 + 1] = vy;
+                vertices[idx + vIdx*12 + 2] = r;  vertices[idx + vIdx*12 + 3] = g;
+                vertices[idx + vIdx*12 + 4] = b;  vertices[idx + vIdx*12 + 5] = a;
+                vertices[idx + vIdx*12 + 6] = rect.x; vertices[idx + vIdx*12 + 7] = rect.y;
+                vertices[idx + vIdx*12 + 8] = rect.w; vertices[idx + vIdx*12 + 9] = rect.h;
+                vertices[idx + vIdx*12 + 10] = rect.radius; vertices[idx + vIdx*12 + 11] = rect.shadow_blur;
+            };
+
+            // Triangle 1
+            pushVertex(0, px, py);
+            pushVertex(1, px + pw, py);
+            pushVertex(2, px, py + ph);
+            
+            // Triangle 2
+            pushVertex(3, px + pw, py);
+            pushVertex(4, px + pw, py + ph);
+            pushVertex(5, px, py + ph);
         }
 
         if (!vertexBuffer || vertexBufferSize < vertices.byteLength) {
@@ -404,7 +493,8 @@ async function bootstrap() {
                                 vfs[targetPath].timestamp = Date.now();
                                 saveVfs();
                             } else {
-                                window.append_html_overlay_text_js(1, outStr);
+                                const term_id = window.__WASI_PROXY.current_terminal_id || 1;
+                                window.append_html_overlay_text_js(term_id, outStr);
                             }
                             
                             return 0; // SUCCESS
@@ -1039,10 +1129,11 @@ async function bootstrap() {
             const str = new TextDecoder().decode(memory.subarray(ptr, ptr + len));
             wasi_print_js(id, str);
         },
-        draw_rect_js: (x, y, w, h) => window.draw_rect_js(x, y, w, h),
+        draw_rect_js: (x, y, w, h, r, g, b, a, radius, shadow_blur) => window.draw_rect_js(x, y, w, h, r, g, b, a, radius, shadow_blur),
         clear_screen_js: () => window.clear_screen_js(),
         create_html_overlay_js: (id, x, y, w, h) => window.create_html_overlay_js(id, x, y, w, h),
-        update_html_overlay_pos_js: (id, x, y) => window.update_html_overlay_pos_js(id, x, y),
+        destroy_html_overlay_js: (id) => window.destroy_html_overlay_js(id),
+        update_html_overlay_bounds_js: (id, x, y, w, h, z) => window.update_html_overlay_bounds_js(id, x, y, w, h, z),
         append_html_overlay_text_js: (id, ptr, len) => {
             const memory = new Uint8Array(wasmInstance.exports.memory.buffer);
             const str = new TextDecoder().decode(memory.subarray(ptr, ptr + len));
@@ -1060,7 +1151,7 @@ async function bootstrap() {
             const c_str = new TextDecoder().decode(memory.subarray(c_ptr, c_ptr + c_len));
             window.draw_editor_js(id, c_str, cursor_pos);
         },
-        sys_execve: (args_ptr, args_len, cwd_ptr, cwd_len, stdin_ptr, stdin_len, stdout_ptr, stdout_len) => {
+        sys_execve: (args_ptr, args_len, cwd_ptr, cwd_len, stdin_ptr, stdin_len, stdout_ptr, stdout_len, terminal_id) => {
             if (!window.__WASI_PROXY.wasm) return -1;
             const memory = new Uint8Array(window.__WASI_PROXY.wasm.exports.memory.buffer);
             let argsStr = "";
@@ -1125,7 +1216,10 @@ async function bootstrap() {
                 const prevCwd = window.__WASI_PROXY.current_cwd;
                 const prevStdout = window.__WASI_PROXY.redirect_stdout;
                 const prevStdin = window.__WASI_PROXY.redirect_stdin;
+                const prevTerminalId = window.__WASI_PROXY.current_terminal_id;
+                
                 window.__WASI_PROXY.wasm = childInstance;
+                window.__WASI_PROXY.current_terminal_id = (terminal_id !== undefined && terminal_id !== 0) ? terminal_id : prevTerminalId;
                 
                 try {
                     childInstance.exports._start();
@@ -1138,6 +1232,7 @@ async function bootstrap() {
                     window.__WASI_PROXY.current_cwd = prevCwd;
                     window.__WASI_PROXY.redirect_stdout = prevStdout;
                     window.__WASI_PROXY.redirect_stdin = prevStdin;
+                    window.__WASI_PROXY.current_terminal_id = prevTerminalId;
                 }
                 return 0; // SUCCESS
             } catch (e) {
@@ -1180,11 +1275,17 @@ async function bootstrap() {
         push_mouse_move: (x, y) => exports.kernel_push_mouse_move(kernelPtr, x, y),
         push_mouse_button: (down) => exports.kernel_push_mouse_button(kernelPtr, down),
         push_key_event: (code) => exports.kernel_push_key_event(kernelPtr, code),
+        push_screen_size: (w, h) => {
+            if (exports.kernel_push_screen_size) {
+                exports.kernel_push_screen_size(kernelPtr, w, h);
+            }
+        },
         sys_fd_write: (fd, iovs_ptr, iovs_len, nwritten_ptr) => exports.sys_fd_write(fd, iovs_ptr, iovs_len, nwritten_ptr),
         sys_fd_read: (fd, iovs_ptr, iovs_len, nread_ptr) => exports.sys_fd_read(fd, iovs_ptr, iovs_len, nread_ptr),
     };
     
     window.__WASI_PROXY.kernel = kernel;
+    kernel.push_screen_size(window.innerWidth, window.innerHeight);
 
     const gpuContext = await initWebGPU();
     if (!gpuContext) {
@@ -1241,6 +1342,7 @@ let pendingText = {};
 let pendingLastLine = {};
 
 window.create_html_overlay_js = function(id, x, y, w, h) {
+    if (document.getElementById('overlay-' + id)) return;
     const div = document.createElement('div');
     div.id = 'overlay-' + id;
     div.className = 'os-window-content';
@@ -1282,11 +1384,14 @@ window.create_html_overlay_js = function(id, x, y, w, h) {
     }
 };
 
-window.update_html_overlay_pos_js = function(id, x, y) {
+window.update_html_overlay_bounds_js = function(id, x, y, w, h, z) {
     const div = document.getElementById('overlay-' + id);
     if (div) {
         div.style.left = x + 'px';
         div.style.top = y + 'px';
+        div.style.width = (w - 20) + 'px';
+        div.style.height = (h - 20) + 'px';
+        div.style.zIndex = 3 + z;
     }
 };
 
@@ -1365,3 +1470,10 @@ window.clear_html_overlay_text_js = function(id) {
 };
 
 bootstrap().catch(console.error);
+
+window.destroy_html_overlay_js = function(id) {
+    const div = document.getElementById('overlay-' + id);
+    if (div) {
+        div.remove();
+    }
+};
