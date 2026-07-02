@@ -9,7 +9,7 @@ extern "C" {
     fn clear_screen_js();
     fn create_html_overlay_js(id: u32, x: f32, y: f32, w: f32, h: f32);
     fn destroy_html_overlay_js(id: u32);
-    fn update_html_overlay_bounds_js(id: u32, x: f32, y: f32, w: f32, h: f32, z: u32);
+    fn update_html_overlay_bounds_js(id: u32, x: f32, y: f32, w: f32, h: f32, z: u32, is_active: u32);
     fn append_html_overlay_text_js(id: u32, ptr: *const u8, len: usize);
     fn update_html_overlay_input_line_js(id: u32, p_ptr: *const u8, p_len: usize, i_ptr: *const u8, i_len: usize, cursor_pos: u32);
     fn clear_html_overlay_text_js(id: u32);
@@ -45,8 +45,8 @@ impl crate::process::Process for DisplayServer {
                 MessagePayload::DestroyHtmlOverlay { id } => {
                     unsafe { destroy_html_overlay_js(id) };
                 }
-                MessagePayload::UpdateHtmlOverlayBounds { id, x, y, w, h, z } => {
-                    unsafe { update_html_overlay_bounds_js(id, x as f32, y as f32, w as f32, h as f32, z) };
+                MessagePayload::UpdateHtmlOverlayBounds { id, x, y, w, h, z, is_active } => {
+                    unsafe { update_html_overlay_bounds_js(id, x as f32, y as f32, w as f32, h as f32, z, is_active as u32) };
                 }
                 MessagePayload::AppendHtmlOverlayText { id, text } => {
                     unsafe { append_html_overlay_text_js(id, text.as_ptr(), text.len()) };

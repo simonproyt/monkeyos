@@ -1,0 +1,69 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Build WebAssembly Kernel
+        run: |
+          chmod +x build.sh
+          ./build.sh
+
+      - name: Prepare build directory
+        run: |
+          mkdir -p dist
+          cp index.html dist/
+          cp -r src dist/
+          
+          # Replicate the structure expected by fetch in main.js
+          mkdir -p dist/kernel/target/wasm32-unknown-unknown/debug/
+          mkdir -p dist/apps/coreutils/target/wasm32-unknown-unknown/release/
+          mkdir -p dist/apps/sh/target/wasm32-unknown-unknown/release/
+          mkdir -p dist/apps/edit/target/wasm32-unknown-unknown/release/
+          
+          cp kernel/target/wasm32-unknown-unknown/debug/kernel.wasm dist/kernel/target/wasm32-unknown-unknown/debug/
+          cp apps/coreutils/target/wasm32-unknown-unknown/release/hello.wasm dist/apps/coreutils/target/wasm32-unknown-unknown/release/
+          cp apps/coreutils/target/wasm32-unknown-unknown/release/coreutils.wasm dist/apps/coreutils/target/wasm32-unknown-unknown/release/
+          cp apps/sh/target/wasm32-unknown-unknown/release/sh.wasm dist/apps/sh/target/wasm32-unknown-unknown/release/
+          cp apps/edit/target/wasm32-unknown-unknown/release/edit.wasm dist/apps/edit/target/wasm32-unknown-unknown/release/
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+      
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: './dist'
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

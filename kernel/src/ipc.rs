@@ -12,7 +12,7 @@ pub enum MessagePayload {
     KeyPress { key_code: u32 },
     CreateHtmlOverlay { id: u32, x: i32, y: i32, w: i32, h: i32 },
     DestroyHtmlOverlay { id: u32 },
-    UpdateHtmlOverlayBounds { id: u32, x: i32, y: i32, w: i32, h: i32, z: u32 },
+    UpdateHtmlOverlayBounds { id: u32, x: i32, y: i32, w: i32, h: i32, z: u32, is_active: bool },
     AppendHtmlOverlayText { id: u32, text: String },
     UpdateHtmlOverlayInputLine { id: u32, prompt: String, input: String, cursor_pos: u32 },
     ClearHtmlOverlayText { id: u32 },

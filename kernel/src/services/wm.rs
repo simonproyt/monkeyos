@@ -91,8 +91,9 @@ impl WindowManager {
                         y: -9999,
                         w: w.w,
                         h: w.h,
-                        z: i as u32
-                    });
+                        z: i as u32,
+                    is_active: i == self.windows.len() - 1
+                });
                 }
                 continue;
             }
@@ -141,7 +142,8 @@ impl WindowManager {
                     y: w.y + title_h,
                     w: w.w,
                     h: w.h - title_h,
-                    z: i as u32
+                    z: i as u32,
+                    is_active: i == self.windows.len() - 1
                 });
             }
         }
@@ -256,7 +258,7 @@ impl Process for WindowManager {
                             win.y = self.mouse_y - self.drag_offset_y;
                             if win.has_overlay {
                                 env.send_msg(self.display_server_pid, MessagePayload::UpdateHtmlOverlayBounds { 
-                                    id: win.id, x: win.x, y: win.y + title_h, w: win.w, h: win.h - title_h, z: idx as u32
+                                    id: win.id, x: win.x, y: win.y + title_h, w: win.w, h: win.h - title_h, z: idx as u32, is_active: false
                                 });
                             }
                             needs_redraw = true;
@@ -278,7 +280,7 @@ impl Process for WindowManager {
                             }
                             if win.has_overlay {
                                 env.send_msg(self.display_server_pid, MessagePayload::UpdateHtmlOverlayBounds { 
-                                    id: win.id, x: win.x, y: win.y + title_h, w: win.w, h: win.h - title_h, z: idx as u32
+                                    id: win.id, x: win.x, y: win.y + title_h, w: win.w, h: win.h - title_h, z: idx as u32, is_active: false
                                 });
                             }
                             needs_redraw = true;
@@ -320,7 +322,7 @@ impl Process for WindowManager {
                                 win.state = WindowState::Normal;
                                 if win.has_overlay {
                                     env.send_msg(self.display_server_pid, MessagePayload::UpdateHtmlOverlayBounds { 
-                                        id: win.id, x: win.x, y: win.y + title_h, w: win.w, h: win.h - title_h, z: self.windows.len() as u32 - 1
+                                        id: win.id, x: win.x, y: win.y + title_h, w: win.w, h: win.h - title_h, z: self.windows.len() as u32 - 1, is_active: true
                                     });
                                 }
                                 let w_owned = self.windows.remove(idx);
@@ -432,7 +434,7 @@ impl Process for WindowManager {
                                 }
                                 if win.has_overlay {
                                     env.send_msg(self.display_server_pid, MessagePayload::UpdateHtmlOverlayBounds { 
-                                        id: win.id, x: win.x, y: win.y + title_h, w: win.w, h: win.h - title_h, z: self.windows.len() as u32 - 1
+                                        id: win.id, x: win.x, y: win.y + title_h, w: win.w, h: win.h - title_h, z: self.windows.len() as u32 - 1, is_active: true
                                     });
                                 }
                                 let win_owned = self.windows.remove(idx);
@@ -442,7 +444,7 @@ impl Process for WindowManager {
                                 win.state = WindowState::Minimized;
                                 if win.has_overlay {
                                     env.send_msg(self.display_server_pid, MessagePayload::UpdateHtmlOverlayBounds { 
-                                        id: win.id, x: -9999, y: -9999, w: win.w, h: win.h, z: idx as u32
+                                        id: win.id, x: -9999, y: -9999, w: win.w, h: win.h, z: idx as u32, is_active: false
                                     });
                                 }
                             } else {

@@ -4,6 +4,10 @@ window.__WASI_PROXY = {
     kernel: null,
 };
 
+let pendingText = {};
+let pendingLastLine = {};
+
+
 function wasi_print_js(id, text) {
     if (id !== 0) {
         append_html_overlay_text_js(id, text);
@@ -129,10 +133,6 @@ async function initWebGPU() {
               final_color = vec4<f32>(input.color.rgb, input.color.a * rect_alpha);
           }
           
-          if (final_color.a < 0.001) {
-              discard;
-          }
-          
           return vec4<f32>(final_color.rgb * final_color.a, final_color.a);
       }
     `;
@@ -180,78 +180,64 @@ async function initWebGPU() {
         entries: [{ binding: 0, resource: { buffer: uniformBuffer } }]
     });
 
-    let rectsToDraw = [];
-    window.draw_rect_js = function(x, y, w, h, r, g, b, a, radius = 0.0, shadow_blur = 0.0) {
-        rectsToDraw.push({x, y, w, h, r, g, b, a, radius, shadow_blur});
-    };
+    let vertices = new Float32Array(10000 * 12); // Max 10k rects
+    let rectCount = 0;
 
     window.clear_screen_js = function() {
-        rectsToDraw = [];
+        rectCount = 0;
     };
 
-    let vertexBuffer = null;
-    let vertexBufferSize = 0;
-
-    function renderWebGPU() {
-        if (rectsToDraw.length === 0) return;
-
-        const bootConsole = document.getElementById('boot-console');
-        if (bootConsole && bootConsole.style.display !== 'none') {
-            bootConsole.style.display = 'none';
-        }
-
-        device.queue.writeBuffer(uniformBuffer, 0, new Float32Array([canvas.width, canvas.height]));
-
-        const vertices = new Float32Array(rectsToDraw.length * 6 * 12);
-        for (let i = 0; i < rectsToDraw.length; i++) {
-            const rect = rectsToDraw[i];
-            const idx = i * 72;
-            const r = rect.r, g = rect.g, b = rect.b, a = rect.a;
-            
-            // Inflate geometry bounds to include the shadow blur margin
-            const padding = rect.shadow_blur * 2.0;
-            const px = rect.x - padding;
-            const py = rect.y - padding;
-            const pw = rect.w + padding * 2.0;
-            const ph = rect.h + padding * 2.0;
-
-            const pushVertex = (vIdx, vx, vy) => {
-                vertices[idx + vIdx*12 + 0] = vx; vertices[idx + vIdx*12 + 1] = vy;
-                vertices[idx + vIdx*12 + 2] = r;  vertices[idx + vIdx*12 + 3] = g;
-                vertices[idx + vIdx*12 + 4] = b;  vertices[idx + vIdx*12 + 5] = a;
-                vertices[idx + vIdx*12 + 6] = rect.x; vertices[idx + vIdx*12 + 7] = rect.y;
-                vertices[idx + vIdx*12 + 8] = rect.w; vertices[idx + vIdx*12 + 9] = rect.h;
-                vertices[idx + vIdx*12 + 10] = rect.radius; vertices[idx + vIdx*12 + 11] = rect.shadow_blur;
-            };
-
-            // Triangle 1
-            pushVertex(0, px, py);
-            pushVertex(1, px + pw, py);
-            pushVertex(2, px, py + ph);
-            
-            // Triangle 2
-            pushVertex(3, px + pw, py);
-            pushVertex(4, px + pw, py + ph);
-            pushVertex(5, px, py + ph);
-        }
-
-        if (!vertexBuffer || vertexBufferSize < vertices.byteLength) {
-            if (vertexBuffer) vertexBuffer.destroy();
-            vertexBufferSize = Math.max(vertices.byteLength, vertexBufferSize * 2, 4096);
-            vertexBuffer = device.createBuffer({
-                size: vertexBufferSize,
-                usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
-            });
-        }
+    window.draw_rect_js = function(x, y, w, h, r, g, b, a, radius, shadow_blur) {
+        if (rectCount >= 10000) return;
+        const idx = rectCount * 72; // 6 vertices * 12 floats
         
-        device.queue.writeBuffer(vertexBuffer, 0, vertices);
+        const rect = {x, y, w, h, r, g, b, a, radius, shadow_blur};
+        
+        // Inflate geometry bounds to include the shadow blur margin
+        const padding = rect.shadow_blur * 2.0;
+        const px = rect.x - padding;
+        const py = rect.y - padding;
+        const pw = rect.w + padding * 2.0;
+        const ph = rect.h + padding * 2.0;
+
+        const pushVertex = (vIdx, vx, vy) => {
+            vertices[idx + vIdx*12 + 0] = vx; vertices[idx + vIdx*12 + 1] = vy;
+            vertices[idx + vIdx*12 + 2] = rect.r; vertices[idx + vIdx*12 + 3] = rect.g; 
+            vertices[idx + vIdx*12 + 4] = rect.b; vertices[idx + vIdx*12 + 5] = rect.a;
+            vertices[idx + vIdx*12 + 6] = rect.x; vertices[idx + vIdx*12 + 7] = rect.y;
+            vertices[idx + vIdx*12 + 8] = rect.w; vertices[idx + vIdx*12 + 9] = rect.h;
+            vertices[idx + vIdx*12 + 10] = rect.radius;
+            vertices[idx + vIdx*12 + 11] = rect.shadow_blur;
+        };
+
+        pushVertex(0, px, py);
+        pushVertex(1, px + pw, py);
+        pushVertex(2, px, py + ph);
+        
+        pushVertex(3, px + pw, py);
+        pushVertex(4, px + pw, py + ph);
+        pushVertex(5, px, py + ph);
+
+        rectCount++;
+    };
+
+    window.renderWebGPU = function() {
+        if (rectCount === 0) return;
+
+        const vertexBuffer = device.createBuffer({
+            size: rectCount * 72 * 4, // bytes
+            usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+        });
+        
+        device.queue.writeBuffer(vertexBuffer, 0, vertices, 0, rectCount * 72);
+        device.queue.writeBuffer(uniformBuffer, 0, new Float32Array([canvas.width, canvas.height]));
 
         const commandEncoder = device.createCommandEncoder();
         const passEncoder = commandEncoder.beginRenderPass({
             colorAttachments: [{
                 view: context.getCurrentTexture().createView(),
                 loadOp: "clear",
-                clearValue: { r: 0.1, g: 0.1, b: 0.18, a: 1.0 },
+                clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 0.0 }, // Transparent background so HTML shows
                 storeOp: "store",
             }]
         });
@@ -259,11 +245,76 @@ async function initWebGPU() {
         passEncoder.setPipeline(pipeline);
         passEncoder.setBindGroup(0, bindGroup);
         passEncoder.setVertexBuffer(0, vertexBuffer);
-        passEncoder.draw(rectsToDraw.length * 6, 1, 0, 0);
+        passEncoder.draw(rectCount * 6);
         passEncoder.end();
 
         device.queue.submit([commandEncoder.finish()]);
-    }
+        
+        vertexBuffer.destroy();
+    };
+    
+    // JS side implementations of OS services
+    
+    // pending variables moved to global scope
+    
+    window.create_html_overlay_js = function(id, x, y, w, h) {
+        if (document.getElementById('overlay-' + id)) return;
+        const div = document.createElement('div');
+        div.id = 'overlay-' + id;
+        div.className = 'os-window-content';
+        div.style.position = 'absolute';
+        div.style.left = x + 'px';
+        div.style.top = y + 'px';
+        div.style.width = w + 'px';
+        div.style.height = h + 'px';
+        div.style.zIndex = '100';
+        div.style.pointerEvents = 'none'; // Let WebGPU handle clicks
+        div.style.color = '#0f0'; // Retro terminal green
+        div.style.fontFamily = 'monospace';
+        div.style.padding = '10px';
+        div.style.boxSizing = 'border-box';
+        div.style.overflow = 'hidden';
+        div.style.whiteSpace = 'pre-wrap';
+        div.style.wordBreak = 'break-all';
+        div.style.transition = 'opacity 0.2s';
+        div.style.backgroundColor = 'transparent'; 
+        div.style.backdropFilter = 'blur(12px)'; // Frosted glass effect
+        div.style.webkitBackdropFilter = 'blur(12px)';
+        document.body.appendChild(div);
+
+        if (pendingText[id]) {
+            // process pending text for backspaces
+            let pText = pendingText[id];
+            let res = "";
+            for (let i = 0; i < pText.length; i++) {
+                if (pText[i] === '\x08') {
+                    res = res.slice(0, -1);
+                } else {
+                    res += pText[i];
+                }
+            }
+            div.textContent = res;
+            delete pendingText[id];
+        }
+        
+        if (pendingLastLine[id]) {
+            let { prompt, input, cursor_pos } = pendingLastLine[id];
+            window.update_html_overlay_input_line_js(id, prompt, input, cursor_pos);
+            delete pendingLastLine[id];
+        }
+    };
+
+    window.update_html_overlay_bounds_js = function(id, x, y, w, h, z, is_active) {
+        const div = document.getElementById('overlay-' + id);
+        if (div) {
+            div.style.left = x + 'px';
+            div.style.top = y + 'px';
+            div.style.width = w + 'px';
+            div.style.height = h + 'px';
+            div.style.zIndex = 100 + z; // Draw on TOP of WebGPU canvas!
+            div.style.opacity = is_active ? '1.0' : '0.15';
+        }
+    };
 
     console.log("[ OK ] WebGPU subsystem initialized.");
     return { device, context, renderWebGPU };
@@ -1133,7 +1184,7 @@ async function bootstrap() {
         clear_screen_js: () => window.clear_screen_js(),
         create_html_overlay_js: (id, x, y, w, h) => window.create_html_overlay_js(id, x, y, w, h),
         destroy_html_overlay_js: (id) => window.destroy_html_overlay_js(id),
-        update_html_overlay_bounds_js: (id, x, y, w, h, z) => window.update_html_overlay_bounds_js(id, x, y, w, h, z),
+        update_html_overlay_bounds_js: (id, x, y, w, h, z, is_active) => window.update_html_overlay_bounds_js(id, x, y, w, h, z, is_active),
         append_html_overlay_text_js: (id, ptr, len) => {
             const memory = new Uint8Array(wasmInstance.exports.memory.buffer);
             const str = new TextDecoder().decode(memory.subarray(ptr, ptr + len));
@@ -1338,62 +1389,6 @@ async function bootstrap() {
 }
 
 // HTML Overlay API for the Kernel
-let pendingText = {};
-let pendingLastLine = {};
-
-window.create_html_overlay_js = function(id, x, y, w, h) {
-    if (document.getElementById('overlay-' + id)) return;
-    const div = document.createElement('div');
-    div.id = 'overlay-' + id;
-    div.className = 'os-window-content';
-    div.style.position = 'absolute';
-    div.style.left = x + 'px';
-    div.style.top = y + 'px';
-    div.style.width = w + 'px';
-    div.style.height = h + 'px';
-    div.style.overflow = 'hidden';
-    div.style.color = '#0f0'; // Retro terminal green
-    div.style.fontFamily = 'monospace';
-    div.style.whiteSpace = 'pre-wrap';
-    div.style.pointerEvents = 'none'; // Let clicks pass through to WebGPU canvas
-    div.style.padding = '10px';
-    div.style.boxSizing = 'border-box';
-    div.style.zIndex = '3';
-    div.style.backgroundColor = 'rgba(0, 0, 0, 0.85)'; // Dark background
-    document.body.appendChild(div);
-
-    if (pendingText[id]) {
-        // process pending text for backspaces
-        let pText = pendingText[id];
-        let res = "";
-        for (let i = 0; i < pText.length; i++) {
-            if (pText[i] === '\x08') {
-                res = res.slice(0, -1);
-            } else {
-                res += pText[i];
-            }
-        }
-        div.textContent = res;
-        delete pendingText[id];
-    }
-    
-    if (pendingLastLine[id]) {
-        let { prompt, input, cursor_pos } = pendingLastLine[id];
-        window.update_html_overlay_input_line_js(id, prompt, input, cursor_pos);
-        delete pendingLastLine[id];
-    }
-};
-
-window.update_html_overlay_bounds_js = function(id, x, y, w, h, z) {
-    const div = document.getElementById('overlay-' + id);
-    if (div) {
-        div.style.left = x + 'px';
-        div.style.top = y + 'px';
-        div.style.width = (w - 20) + 'px';
-        div.style.height = (h - 20) + 'px';
-        div.style.zIndex = 3 + z;
-    }
-};
 
 window.append_html_overlay_text_js = function(id, text) {
     const div = document.getElementById('overlay-' + id);

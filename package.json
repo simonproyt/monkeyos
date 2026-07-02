@@ -6,12 +6,15 @@
   "scripts": {
     "build:rust": "./build.sh",
     "dev": "npm run build:rust && vite",
-    "build": "npm run build:rust && tsc && vite build",
+    "build": "npm run build:rust && vite build",
     "preview": "vite preview"
   },
   "devDependencies": {
     "typescript": "^5.2.2",
     "vite": "^5.2.0",
     "vite-plugin-wasm": "^3.6.0"
+  },
+  "dependencies": {
+    "puppeteer": "^24.43.1"
   }
 }
