@@ -412,7 +412,7 @@ async function bootstrap() {
         // Cache hello.wasm
         if (!vfs["/bin/hello"]) {
             console.log("Fetching /bin/hello.wasm for the first time...");
-            const helloRes = await fetch("/bin/hello.wasm");
+            const helloRes = await fetch("./bin/hello.wasm");
             if (helloRes.ok) {
                 const helloBuf = await helloRes.arrayBuffer();
                 vfs["/bin/hello"] = { type: "executable", binary: helloBuf, timestamp: Date.now() };
@@ -426,7 +426,7 @@ async function bootstrap() {
         // Cache sh.wasm
         if (!vfs["/bin/sh"]) {
             console.log("Fetching /bin/sh.wasm for the first time...");
-            const shRes = await fetch("/bin/sh.wasm");
+            const shRes = await fetch("./bin/sh.wasm");
             if (shRes.ok) {
                 const shBuf = await shRes.arrayBuffer();
                 vfs["/bin/sh"] = { type: "executable", binary: shBuf, timestamp: Date.now() };
@@ -440,7 +440,7 @@ async function bootstrap() {
         // Cache coreutils.wasm
         if (!vfs["/bin/coreutils"]) {
             console.log("Fetching /bin/coreutils.wasm for the first time...");
-            const coreutilsRes = await fetch("/bin/coreutils.wasm");
+            const coreutilsRes = await fetch("./bin/coreutils.wasm");
             if (coreutilsRes.ok) {
                 const coreutilsBuf = await coreutilsRes.arrayBuffer();
                 vfs["/bin/coreutils"] = { type: "executable", binary: coreutilsBuf, timestamp: Date.now() };
@@ -462,7 +462,7 @@ async function bootstrap() {
         // Cache edit.wasm
         if (!vfs["/bin/edit"]) {
             console.log("Fetching /bin/edit.wasm for the first time...");
-            const editRes = await fetch("/bin/edit.wasm");
+            const editRes = await fetch("./bin/edit.wasm");
             if (editRes.ok) {
                 const editBuf = await editRes.arrayBuffer();
                 vfs["/bin/edit"] = { type: "executable", binary: editBuf, timestamp: Date.now() };
@@ -1293,7 +1293,7 @@ async function bootstrap() {
         }
     };
 
-    const response = await fetch('/kernel.wasm?t=' + Date.now());
+    const response = await fetch('./kernel.wasm?t=' + Date.now());
     const wasmBytes = await response.arrayBuffer();
     const result = await WebAssembly.instantiate(wasmBytes, {
         wasi_snapshot_preview1,
