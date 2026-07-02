@@ -21,10 +21,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install Node.js
+        uses: actions/setup-node@v6
         with:
-          targets: wasm32-unknown-unknown
+          node-version: 24
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -32,26 +33,8 @@ jobs:
 
       - name: Build WebAssembly Kernel
         run: |
-          chmod +x build.sh
-          ./build.sh
-
-      - name: Prepare build directory
-        run: |
-          mkdir -p dist
-          cp index.html dist/
-          cp -r src dist/
-          
-          # Replicate the structure expected by fetch in main.js
-          mkdir -p dist/kernel/target/wasm32-unknown-unknown/debug/
-          mkdir -p dist/apps/coreutils/target/wasm32-unknown-unknown/release/
-          mkdir -p dist/apps/sh/target/wasm32-unknown-unknown/release/
-          mkdir -p dist/apps/edit/target/wasm32-unknown-unknown/release/
-          
-          cp kernel/target/wasm32-unknown-unknown/debug/kernel.wasm dist/kernel/target/wasm32-unknown-unknown/debug/
-          cp apps/coreutils/target/wasm32-unknown-unknown/release/hello.wasm dist/apps/coreutils/target/wasm32-unknown-unknown/release/
-          cp apps/coreutils/target/wasm32-unknown-unknown/release/coreutils.wasm dist/apps/coreutils/target/wasm32-unknown-unknown/release/
-          cp apps/sh/target/wasm32-unknown-unknown/release/sh.wasm dist/apps/sh/target/wasm32-unknown-unknown/release/
-          cp apps/edit/target/wasm32-unknown-unknown/release/edit.wasm dist/apps/edit/target/wasm32-unknown-unknown/release/
+          npm ci
+          npm run build
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
