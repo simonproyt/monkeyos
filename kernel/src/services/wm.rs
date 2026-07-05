@@ -92,7 +92,7 @@ impl WindowManager {
                         w: w.w,
                         h: w.h,
                         z: i as u32,
-                    is_active: i == self.windows.len() - 1
+                    is_active: !self.start_menu_open && i == self.windows.len() - 1
                 });
                 }
                 continue;
@@ -100,11 +100,15 @@ impl WindowManager {
 
             let title_h = 30;
             
+            let is_active = !self.start_menu_open && i == self.windows.len() - 1;
+            let alpha = if is_active { 1.0 } else { 0.4 };
+            let shadow = if is_active { 15.0 } else { 0.0 };
+
             // Draw entire Window Background with drop shadow and rounded corners
             env.send_msg(self.display_server_pid, MessagePayload::DrawRect { 
                 x: w.x, y: w.y, w: w.w, h: w.h, 
-                r: 0.1, g: 0.1, b: 0.12, a: 0.85, 
-                radius: 12.0, shadow_blur: 15.0
+                r: 0.1, g: 0.1, b: 0.12, a: 0.85 * alpha, 
+                radius: 12.0, shadow_blur: shadow
             });
 
             // Draw a subtle line to separate Title Bar from body
@@ -143,7 +147,8 @@ impl WindowManager {
                     w: w.w,
                     h: w.h - title_h,
                     z: i as u32,
-                    is_active: i == self.windows.len() - 1
+                    is_active
+
                 });
             }
         }
