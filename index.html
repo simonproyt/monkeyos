@@ -23,6 +23,14 @@
         z-index: 10;
         pointer-events: auto;
       }
+      #text-overlay {
+        display: block;
+        width: 100%;
+        height: 100%;
+        position: absolute;
+        z-index: 20;
+        pointer-events: none;
+      }
       #boot-console {
         position: absolute;
         top: 0;
@@ -49,6 +57,7 @@
   </head>
   <body>
     <canvas id="os-canvas"></canvas>
+    <canvas id="text-overlay"></canvas>
     <div id="boot-console"></div>
     <script type="module" src="/src/main.js"></script>
   </body>

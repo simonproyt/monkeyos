@@ -222,3 +222,26 @@ pub extern "C" fn sys_fd_write(fd: u32, iovs_ptr: u32, iovs_len: u32, nwritten_p
 pub extern "C" fn sys_fd_read(_fd: u32, _iovs_ptr: u32, _iovs_len: u32, _nread_ptr: u32) -> u32 {
     0
 }
+
+#[no_mangle]
+pub unsafe extern "C" fn kernel_create_window(kernel: *mut Kernel, x: i32, y: i32, w: i32, h: i32, has_overlay: u32) -> u32 {
+    let k = unsafe { &mut *kernel };
+    let title = "App".to_string();
+    
+    if let Some(wm_pid) = k.registry.lookup("wm") {
+        // Simple sequential ID, offset to avoid clashes with kernel windows
+        static NEXT_WINDOW_ID: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(10000);
+        let id = NEXT_WINDOW_ID.fetch_add(1, core::sync::atomic::Ordering::SeqCst);
+        
+        k.ipc.send(crate::ipc::Message {
+            sender: 0,
+            receiver: wm_pid,
+            payload: crate::ipc::MessagePayload::CreateWindow {
+                id, x, y, w, h, title, owner: has_overlay as usize
+            }
+        });
+        id
+    } else {
+        0
+    }
+}

@@ -2,6 +2,13 @@ use crate::process::{Process, ProcessId};
 use crate::sys::SyscallEnv;
 use crate::ipc::MessagePayload;
 
+#[link(wasm_import_module = "env")]
+extern "C" {
+    fn gui_app_mouse_move_js(id: u32, local_x: i32, local_y: i32);
+    fn gui_app_mouse_down_js(id: u32, local_x: i32, local_y: i32);
+    fn gui_app_mouse_up_js(id: u32, local_x: i32, local_y: i32);
+}
+
 #[derive(Clone, Copy, PartialEq)]
 enum WindowState {
     Normal,
@@ -28,7 +35,7 @@ struct Window {
     y: i32,
     w: i32,
     h: i32,
-    _title: String,
+    title: String,
     owner: ProcessId,
     has_overlay: bool,
     state: WindowState,
@@ -72,6 +79,7 @@ impl WindowManager {
 
     fn redraw(&self, env: &mut SyscallEnv) {
         env.send_msg(self.display_server_pid, MessagePayload::ClearScreen);
+        env.send_msg(self.display_server_pid, MessagePayload::ClearText);
         
         // Draw Desktop Background
         env.send_msg(self.display_server_pid, MessagePayload::DrawRect { 
@@ -101,7 +109,7 @@ impl WindowManager {
             let title_h = 30;
             
             let is_active = !self.start_menu_open && i == self.windows.len() - 1;
-            let alpha = if is_active { 1.0 } else { 0.4 };
+            let alpha = if is_active { 1.0 } else { 0.8 };
             let shadow = if is_active { 15.0 } else { 0.0 };
 
             // Draw entire Window Background with drop shadow and rounded corners
@@ -109,6 +117,13 @@ impl WindowManager {
                 x: w.x, y: w.y, w: w.w, h: w.h, 
                 r: 0.1, g: 0.1, b: 0.12, a: 0.85 * alpha, 
                 radius: 12.0, shadow_blur: shadow
+            });
+
+            // Title text
+            env.send_msg(self.display_server_pid, MessagePayload::DrawText { 
+                x: w.x + 10, y: w.y + 6, 
+                text: w.title.clone(), 
+                font_size: 16.0, r: 0.9, g: 0.9, b: 0.9, a: 1.0 
             });
 
             // Draw a subtle line to separate Title Bar from body
@@ -151,6 +166,15 @@ impl WindowManager {
 
                 });
             }
+            if w.owner == 0 {
+                env.send_msg(self.display_server_pid, MessagePayload::DrawGuiApp { 
+                    id: w.id, 
+                    x: w.x, 
+                    y: w.y + title_h, 
+                    w: w.w, 
+                    h: w.h - title_h 
+                });
+            }
         }
 
         // Draw Floating Dock (Taskbar replacement)
@@ -187,7 +211,8 @@ impl WindowManager {
         });
 
         // Draw indicator dot if terminal is running (any window has id)
-        if !self.windows.is_empty() {
+        let has_terminal = self.windows.iter().any(|w| !w.has_overlay);
+        if has_terminal {
             env.send_msg(self.display_server_pid, MessagePayload::DrawRect { 
                 x: dock_x + 72, y: dock_y + 42, w: 6, h: 6, 
                 r: 0.8, g: 0.8, b: 0.8, a: 1.0,
@@ -219,7 +244,7 @@ impl Process for WindowManager {
     fn name(&self) -> &str { "window_manager" }
 
     fn tick(&mut self, env: &mut SyscallEnv) -> bool {
-        let mut needs_redraw = false;
+        let mut needs_redraw = true; // Always redraw for immediate mode GUI
 
         while let Some(msg) = env.recv_msg() {
             match msg.payload {
@@ -229,23 +254,26 @@ impl Process for WindowManager {
                     needs_redraw = true;
                 }
                 MessagePayload::CreateWindow { id, x, y, w, h, title, owner } => {
+                    let has_overlay = owner != 0;
                     self.windows.push(Window { 
                         id, x, y, w, h, 
-                        _title: title, 
+                        title, 
                         owner, 
-                        has_overlay: true,
+                        has_overlay,
                         state: WindowState::Normal,
                         restore_rect: None,
                     });
                     
                     let title_h = 30;
-                    env.send_msg(self.display_server_pid, MessagePayload::CreateHtmlOverlay { 
-                        id, 
-                        x, 
-                        y: y + title_h, 
-                        w, 
-                        h: h - title_h 
-                    });
+                    if has_overlay {
+                        env.send_msg(self.display_server_pid, MessagePayload::CreateHtmlOverlay { 
+                            id, 
+                            x, 
+                            y: y + title_h, 
+                            w, 
+                            h: h - title_h 
+                        });
+                    }
                     
                     needs_redraw = true;
                 }
@@ -257,15 +285,23 @@ impl Process for WindowManager {
                     
                     let title_h = 30;
 
+                    if let Some(active_win) = self.windows.last() {
+                        let rx = self.mouse_x - active_win.x;
+                        let ry = self.mouse_y - (active_win.y + title_h);
+                        if rx >= 0 && ry >= 0 && rx < active_win.w && ry < (active_win.h - title_h) {
+                            if active_win.owner == 0 {
+                                unsafe { gui_app_mouse_move_js(active_win.id, self.mouse_x, self.mouse_y) };
+                            } else {
+                                env.send_msg(active_win.owner, MessagePayload::MouseMove { x: rx, y: ry });
+                            }
+                        }
+                    }
+
                     if let Some(idx) = self.drag_window_index {
                         if let Some(win) = self.windows.get_mut(idx) {
                             win.x = self.mouse_x - self.drag_offset_x;
                             win.y = self.mouse_y - self.drag_offset_y;
-                            if win.has_overlay {
-                                env.send_msg(self.display_server_pid, MessagePayload::UpdateHtmlOverlayBounds { 
-                                    id: win.id, x: win.x, y: win.y + title_h, w: win.w, h: win.h - title_h, z: idx as u32, is_active: false
-                                });
-                            }
+
                             needs_redraw = true;
                         }
                     } else if let Some(idx) = self.resize_window_index {
@@ -283,11 +319,7 @@ impl Process for WindowManager {
                                 }
                                 _ => {}
                             }
-                            if win.has_overlay {
-                                env.send_msg(self.display_server_pid, MessagePayload::UpdateHtmlOverlayBounds { 
-                                    id: win.id, x: win.x, y: win.y + title_h, w: win.w, h: win.h - title_h, z: idx as u32, is_active: false
-                                });
-                            }
+
                             needs_redraw = true;
                         }
                     }
@@ -341,20 +373,17 @@ impl Process for WindowManager {
 
                         // Check Start Menu items
                         if self.start_menu_open {
-                            let sm_x = dock_x;
-                            let sm_y = dock_y - 320;
-                            let sm_w = 250;
-                            let sm_h = 300;
-                            if self.mouse_x < sm_x || self.mouse_x > sm_x + sm_w ||
-                               self.mouse_y < sm_y || self.mouse_y > sm_y + sm_h {
-                                self.start_menu_open = false;
-                                needs_redraw = true;
-                            } else {
+                            if self.mouse_x >= 10 && self.mouse_x <= 310 && 
+                               self.mouse_y >= self.screen_h - dock_h - 410 && self.mouse_y <= self.screen_h - dock_h - 10 {
                                 // Clicked inside start menu! Spawn a terminal for now.
                                 env.spawn_process("terminal");
                                 self.start_menu_open = false;
                                 needs_redraw = true;
                                 continue;
+                            } else if self.mouse_y < self.screen_h - dock_h {
+                                // Clicked outside start menu, close it
+                                self.start_menu_open = false;
+                                needs_redraw = true;
                             }
                         }
 
@@ -456,6 +485,18 @@ impl Process for WindowManager {
                                 // Bring to front
                                 let win_owned = self.windows.remove(idx);
                                 self.windows.push(win_owned);
+                                
+                                let title_h = 30;
+                                let active_win = self.windows.last().unwrap();
+                                let rx = self.mouse_x - active_win.x;
+                                let ry = self.mouse_y - (active_win.y + title_h);
+                                if rx >= 0 && ry >= 0 && rx < active_win.w && ry < (active_win.h - title_h) {
+                                    if active_win.owner == 0 {
+                                        unsafe { gui_app_mouse_down_js(active_win.id, self.mouse_x, self.mouse_y) };
+                                    } else {
+                                        env.send_msg(active_win.owner, MessagePayload::MouseButton { down: true });
+                                    }
+                                }
                             }
                             needs_redraw = true;
                         }
@@ -463,6 +504,20 @@ impl Process for WindowManager {
                         self.drag_window_index = None;
                         self.resize_window_index = None;
                         self.resize_edge = ResizeEdge::None;
+                        
+                        // Forward mouse up to active window
+                        let title_h = 30;
+                        if let Some(active_win) = self.windows.last() {
+                            let rx = self.mouse_x - active_win.x;
+                            let ry = self.mouse_y - (active_win.y + title_h);
+                            if rx >= 0 && ry >= 0 && rx < active_win.w && ry < (active_win.h - title_h) {
+                                if active_win.owner == 0 {
+                                    unsafe { gui_app_mouse_up_js(active_win.id, self.mouse_x, self.mouse_y) };
+                                } else {
+                                    env.send_msg(active_win.owner, MessagePayload::MouseButton { down: false });
+                                }
+                            }
+                        }
                     }
                 }
                 MessagePayload::KeyPress { key_code } => {

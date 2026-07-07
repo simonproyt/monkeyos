@@ -18,6 +18,9 @@ pub enum MessagePayload {
     ClearHtmlOverlayText { id: u32 },
     DrawEditor { id: u32, content: String, cursor_pos: u32 },
     WindowClosed { id: u32 },
+    DrawText { x: i32, y: i32, text: String, font_size: f32, r: f32, g: f32, b: f32, a: f32 },
+    DrawGuiApp { id: u32, x: i32, y: i32, w: i32, h: i32 },
+    ClearText,
     // Other syscalls / service messages will go here
 }
 

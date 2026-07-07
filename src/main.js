@@ -60,6 +60,12 @@ async function initWebGPU() {
     function resizeCanvas() {
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
+        const textCanvas = document.getElementById("text-overlay");
+        if (textCanvas) {
+            textCanvas.width = window.innerWidth;
+            textCanvas.height = window.innerHeight;
+            window.textCtx = textCanvas.getContext("2d");
+        }
         if (window.__WASI_PROXY && window.__WASI_PROXY.kernel) {
             window.__WASI_PROXY.kernel.push_screen_size(canvas.width, canvas.height);
         }
@@ -409,69 +415,34 @@ async function bootstrap() {
         
         let shouldSaveVfs = false;
         
-        // Cache hello.wasm
-        if (!vfs["/bin/hello"]) {
-            console.log("Fetching /bin/hello.wasm for the first time...");
-            const helloRes = await fetch("./bin/hello.wasm");
-            if (helloRes.ok) {
-                const helloBuf = await helloRes.arrayBuffer();
-                vfs["/bin/hello"] = { type: "executable", binary: helloBuf, timestamp: Date.now() };
-                if (!vfs["/bin"].children.includes("hello")) {
-                    vfs["/bin"].children.push("hello");
+        // Preload binaries
+        const binaries = ['hello.wasm', 'coreutils.wasm', 'sh.wasm', 'edit.wasm', 'calc.wasm'];
+        for (const bin of binaries) {
+            const resp = await fetch(`/bin/${bin}?t=${Date.now()}`);
+            if (resp.ok) {
+                const buffer = await resp.arrayBuffer();
+                vfs['/bin/' + bin.split('.')[0]] = {
+                    type: "executable",
+                    binary: buffer,
+                    timestamp: Date.now()
+                };
+                if (!vfs["/bin"].children.includes(bin.split('.')[0])) {
+                    vfs["/bin"].children.push(bin.split('.')[0]);
                 }
-                shouldSaveVfs = true;
-            }
-        }
-
-        // Cache sh.wasm
-        if (!vfs["/bin/sh"]) {
-            console.log("Fetching /bin/sh.wasm for the first time...");
-            const shRes = await fetch("./bin/sh.wasm");
-            if (shRes.ok) {
-                const shBuf = await shRes.arrayBuffer();
-                vfs["/bin/sh"] = { type: "executable", binary: shBuf, timestamp: Date.now() };
-                if (!vfs["/bin"].children.includes("sh")) {
-                    vfs["/bin"].children.push("sh");
-                }
-                shouldSaveVfs = true;
-            }
-        }
-
-        // Cache coreutils.wasm
-        if (!vfs["/bin/coreutils"]) {
-            console.log("Fetching /bin/coreutils.wasm for the first time...");
-            const coreutilsRes = await fetch("./bin/coreutils.wasm");
-            if (coreutilsRes.ok) {
-                const coreutilsBuf = await coreutilsRes.arrayBuffer();
-                vfs["/bin/coreutils"] = { type: "executable", binary: coreutilsBuf, timestamp: Date.now() };
-                if (!vfs["/bin"].children.includes("coreutils")) {
-                    vfs["/bin"].children.push("coreutils");
-                }
-                // create aliases for coreutils commands
-                const cmds = ["ls", "cat", "echo", "pwd", "mkdir", "rm", "head", "tail", "wc", "sort", "touch"];
-                for (let cmd of cmds) {
-                    if (!vfs[`/bin/${cmd}`]) {
-                        vfs[`/bin/${cmd}`] = vfs["/bin/coreutils"];
-                        vfs["/bin"].children.push(cmd);
-                    }
-                }
-                shouldSaveVfs = true;
             }
         }
         
-        // Cache edit.wasm
-        if (!vfs["/bin/edit"]) {
-            console.log("Fetching /bin/edit.wasm for the first time...");
-            const editRes = await fetch("./bin/edit.wasm");
-            if (editRes.ok) {
-                const editBuf = await editRes.arrayBuffer();
-                vfs["/bin/edit"] = { type: "executable", binary: editBuf, timestamp: Date.now() };
-                if (!vfs["/bin"].children.includes("edit")) {
-                    vfs["/bin"].children.push("edit");
+        // create aliases for coreutils commands
+        const cmds = ["ls", "cat", "echo", "pwd", "mkdir", "rm", "head", "tail", "wc", "sort", "touch"];
+        for (let cmd of cmds) {
+            if (!vfs[`/bin/${cmd}`]) {
+                vfs[`/bin/${cmd}`] = vfs["/bin/coreutils"];
+                if (!vfs["/bin"].children.includes(cmd)) {
+                    vfs["/bin"].children.push(cmd);
                 }
-                shouldSaveVfs = true;
             }
         }
+        shouldSaveVfs = true;
         
         if (shouldSaveVfs && db) {
             await saveVfsToDB(db, vfs);
@@ -1176,11 +1147,43 @@ async function bootstrap() {
             console.log(str);
         },
         wasi_print_js: (id, ptr, len) => {
-            const memory = new Uint8Array(wasmInstance.exports.memory.buffer);
+            const wasm = window.__WASI_PROXY.wasm || wasmInstance;
+            const memory = new Uint8Array(wasm.exports.memory.buffer);
             const str = new TextDecoder().decode(memory.subarray(ptr, ptr + len));
             wasi_print_js(id, str);
         },
         draw_rect_js: (x, y, w, h, r, g, b, a, radius, shadow_blur) => window.draw_rect_js(x, y, w, h, r, g, b, a, radius, shadow_blur),
+        draw_text_js: (x, y, ptr, len, font_size, r, g, b, a) => {
+            if (!window.textCtx) {
+                const tc = document.getElementById("text-overlay");
+                if (tc) {
+                    tc.width = window.innerWidth;
+                    tc.height = window.innerHeight;
+                    window.textCtx = tc.getContext("2d");
+                }
+            }
+            if (!window.textCtx) return;
+            const wasm = window.__WASI_PROXY.wasm || wasmInstance;
+            const memory = new Uint8Array(wasm.exports.memory.buffer);
+            const text = new TextDecoder().decode(memory.subarray(ptr, ptr + len));
+            window.textCtx.font = `${font_size}px monospace`;
+            window.textCtx.fillStyle = `rgba(${r * 255}, ${g * 255}, ${b * 255}, ${a})`;
+            window.textCtx.textBaseline = 'top';
+            window.textCtx.fillText(text, x, y);
+        },
+        clear_text_js: () => {
+            if (!window.textCtx) {
+                const tc = document.getElementById("text-overlay");
+                if (tc) {
+                    tc.width = window.innerWidth;
+                    tc.height = window.innerHeight;
+                    window.textCtx = tc.getContext("2d");
+                }
+            }
+            if (window.textCtx) {
+                window.textCtx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+            }
+        },
         clear_screen_js: () => window.clear_screen_js(),
         create_html_overlay_js: (id, x, y, w, h) => window.create_html_overlay_js(id, x, y, w, h),
         destroy_html_overlay_js: (id) => window.destroy_html_overlay_js(id),
@@ -1197,6 +1200,53 @@ async function bootstrap() {
             window.update_html_overlay_input_line_js(id, p_str, i_str, cursor_pos);
         },
         clear_html_overlay_text_js: (id) => window.clear_html_overlay_text_js(id),
+        draw_gui_app_js: (id, x, y, w, h) => {
+            const app = window.gui_apps.find(a => a.__window_id === id);
+            if (app && app.exports.tick) {
+                const prev = window.__WASI_PROXY.wasm;
+                window.__WASI_PROXY.wasm = app;
+                app.exports.tick(x, y, w, h);
+                window.__WASI_PROXY.wasm = prev;
+            }
+        },
+        gui_app_mouse_move_js: (id, mx, my) => {
+            const app = window.gui_apps.find(a => a.__window_id === id);
+            if (app && app.exports.handle_mouse_move) {
+                const prev = window.__WASI_PROXY.wasm;
+                window.__WASI_PROXY.wasm = app;
+                app.exports.handle_mouse_move(mx, my);
+                window.__WASI_PROXY.wasm = prev;
+            }
+        },
+        gui_app_mouse_down_js: (id, mx, my) => {
+            const app = window.gui_apps.find(a => a.__window_id === id);
+            if (app && app.exports.handle_mouse_down) {
+                const prev = window.__WASI_PROXY.wasm;
+                window.__WASI_PROXY.wasm = app;
+                app.exports.handle_mouse_down(mx, my);
+                window.__WASI_PROXY.wasm = prev;
+            }
+        },
+        gui_app_mouse_up_js: (id, mx, my) => {
+            const app = window.gui_apps.find(a => a.__window_id === id);
+            if (app && app.exports.handle_mouse_up) {
+                const prev = window.__WASI_PROXY.wasm;
+                window.__WASI_PROXY.wasm = app;
+                app.exports.handle_mouse_up(mx, my);
+                window.__WASI_PROXY.wasm = prev;
+            }
+        },
+        sys_create_window: (x, y, w, h) => {
+            console.log("sys_create_window", x, y, w, h);
+            if (wasmInstance && wasmInstance.exports.kernel_create_window && window.__WASI_PROXY.kernelPtr) {
+                const id = wasmInstance.exports.kernel_create_window(window.__WASI_PROXY.kernelPtr, x, y, w, h, 0);
+                if (window.__WASI_PROXY.wasm) {
+                    window.__WASI_PROXY.wasm.__window_id = id;
+                }
+                return id;
+            }
+            return 0;
+        },
         draw_editor_js: (id, c_ptr, c_len, cursor_pos) => {
             const memory = new Uint8Array(wasmInstance.exports.memory.buffer);
             const c_str = new TextDecoder().decode(memory.subarray(c_ptr, c_ptr + c_len));
@@ -1273,7 +1323,13 @@ async function bootstrap() {
                 window.__WASI_PROXY.current_terminal_id = (terminal_id !== undefined && terminal_id !== 0) ? terminal_id : prevTerminalId;
                 
                 try {
-                    childInstance.exports._start();
+                    if (childInstance.exports.tick) {
+                        if (childInstance.exports.init) childInstance.exports.init();
+                        window.gui_apps.push(childInstance);
+                        console.log("Registered GUI App!");
+                    } else if (childInstance.exports._start) {
+                        childInstance.exports._start();
+                    }
                 } catch (e) {
                     if (e.message !== "unreachable") {
                         console.error("Process exited with exception:", e);
@@ -1320,6 +1376,7 @@ async function bootstrap() {
     const exports = wasmInstance.exports;
     
     const kernelPtr = exports.kernel_new();
+    window.__WASI_PROXY.kernelPtr = kernelPtr;
 
     const kernel = {
         tick: () => exports.kernel_tick(kernelPtr),
@@ -1339,6 +1396,7 @@ async function bootstrap() {
     kernel.push_screen_size(window.innerWidth, window.innerHeight);
 
     const gpuContext = await initWebGPU();
+    window.gui_apps = [];
     if (!gpuContext) {
         document.body.innerHTML = "<h1 style='color: red; text-align: center; margin-top: 20%;'>WebGPU is required for MonkeyOS.</h1>";
         return;

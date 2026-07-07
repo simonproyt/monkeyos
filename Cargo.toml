@@ -4,7 +4,7 @@ members = [
     "apps/hello",
     "apps/coreutils",
     "apps/sh"
-, "apps/edit"]
+, "apps/edit", "apps/libui", "apps/calc"]
 resolver = "2"
 
 [profile.release]
