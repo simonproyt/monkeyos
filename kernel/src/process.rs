@@ -67,6 +67,11 @@ impl ProcessManager {
         for name in spawn_queue {
             if name == "terminal" {
                 self.spawn(|pid| Box::new(crate::services::terminal::TerminalProcess::new(pid)));
+            } else if name.starts_with("/bin/") {
+                let mut args_buf = Vec::new();
+                args_buf.extend_from_slice(name.as_bytes());
+                args_buf.push(0);
+                crate::wasi::call_sys_execve(&args_buf, "/", None, None, 0);
             }
             // we could support more processes here
         }

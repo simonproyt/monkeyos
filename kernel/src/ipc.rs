@@ -21,6 +21,8 @@ pub enum MessagePayload {
     DrawText { x: i32, y: i32, text: String, font_size: f32, r: f32, g: f32, b: f32, a: f32 },
     DrawGuiApp { id: u32, x: i32, y: i32, w: i32, h: i32 },
     ClearText,
+    SpawnTerminal,
+    SpawnProcess { bin: String },
     // Other syscalls / service messages will go here
 }
 

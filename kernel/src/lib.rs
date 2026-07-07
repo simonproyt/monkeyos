@@ -114,6 +114,25 @@ impl Kernel {
 
         // Run scheduler
         self.pm.tick_all(&mut self.ipc, &self.registry);
+
+        // Process Kernel messages (PID 0)
+        while let Some(msg) = self.ipc.receive(0) {
+            match msg.payload {
+                crate::ipc::MessagePayload::SpawnTerminal => {
+                    let terminal_pid = self.pm.spawn(|pid| Box::new(crate::services::terminal::TerminalProcess::new(pid)));
+                    // Note: We don't overwrite the registry's "terminal" entry unless we want to,
+                    // but it's fine for now as it's just used for looking up the default terminal.
+                }
+                crate::ipc::MessagePayload::SpawnProcess { bin } => {
+                    // Convert bin string to null-terminated byte slice
+                    let mut args_buf = Vec::new();
+                    args_buf.extend_from_slice(bin.as_bytes());
+                    args_buf.push(0);
+                    crate::wasi::call_sys_execve(&args_buf, "/", None, None, 0);
+                }
+                _ => {}
+            }
+        }
     }
 
     pub fn push_mouse_move(&mut self, x: i32, y: i32) {

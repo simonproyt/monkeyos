@@ -178,7 +178,7 @@ impl WindowManager {
         }
 
         // Draw Floating Dock (Taskbar replacement)
-        let dock_w = 200;
+        let dock_w = 60 + (self.windows.len() as i32 * 40) + 10;
         let dock_h = 50;
         let dock_x = (self.screen_w - dock_w) / 2;
         let dock_y = self.screen_h - dock_h - 15;
@@ -196,28 +196,33 @@ impl WindowManager {
             radius: 15.0, shadow_blur: 5.0
         });
         
-        // Draw Terminal Icon (Green Rounded Rect)
-        env.send_msg(self.display_server_pid, MessagePayload::DrawRect { 
-            x: dock_x + 60, y: dock_y + 10, w: 30, h: 30, 
-            r: 0.2, g: 0.8, b: 0.4, a: 1.0,
-            radius: 8.0, shadow_blur: 5.0
-        });
-        
-        // Draw Settings Icon (Blue Rounded Rect)
-        env.send_msg(self.display_server_pid, MessagePayload::DrawRect { 
-            x: dock_x + 110, y: dock_y + 10, w: 30, h: 30, 
-            r: 0.2, g: 0.4, b: 0.9, a: 1.0,
-            radius: 8.0, shadow_blur: 5.0
-        });
+        // Draw dynamically for windows
+        for (idx, w) in self.windows.iter().enumerate() {
+            let icon_x = dock_x + 60 + (idx as i32 * 40);
+            
+            // Choose a color based on title hash or hardcoded
+            let (r, g, b) = if w.title == "Terminal" {
+                (0.2, 0.8, 0.4)
+            } else if w.title == "Calculator" {
+                (0.8, 0.6, 0.2)
+            } else {
+                (0.4, 0.4, 0.8)
+            };
 
-        // Draw indicator dot if terminal is running (any window has id)
-        let has_terminal = self.windows.iter().any(|w| !w.has_overlay);
-        if has_terminal {
             env.send_msg(self.display_server_pid, MessagePayload::DrawRect { 
-                x: dock_x + 72, y: dock_y + 42, w: 6, h: 6, 
-                r: 0.8, g: 0.8, b: 0.8, a: 1.0,
-                radius: 3.0, shadow_blur: 2.0
+                x: icon_x, y: dock_y + 10, w: 30, h: 30, 
+                r, g, b, a: 1.0,
+                radius: 8.0, shadow_blur: 5.0
             });
+
+            // Draw indicator dot
+            if w.state != WindowState::Minimized {
+                env.send_msg(self.display_server_pid, MessagePayload::DrawRect { 
+                    x: icon_x + 12, y: dock_y + 42, w: 6, h: 6, 
+                    r: 0.8, g: 0.8, b: 0.8, a: 1.0,
+                    radius: 3.0, shadow_blur: 2.0
+                });
+            }
         }
 
         // Draw Start Menu
@@ -234,7 +239,23 @@ impl WindowManager {
                 r: 0.2, g: 0.8, b: 0.4, a: 1.0,
                 radius: 8.0, shadow_blur: 5.0
             });
-            // We would draw text here, but without font rendering we just rely on the colored box
+            env.send_msg(self.display_server_pid, MessagePayload::DrawText { 
+                x: dock_x + 70, y: dock_y - 290, 
+                text: "Terminal".to_string(), 
+                font_size: 16.0, r: 0.9, g: 0.9, b: 0.9, a: 1.0 
+            });
+
+            // Start Menu: Calculator App entry
+            env.send_msg(self.display_server_pid, MessagePayload::DrawRect { 
+                x: dock_x + 20, y: dock_y - 250, w: 40, h: 40, 
+                r: 0.8, g: 0.6, b: 0.2, a: 1.0,
+                radius: 8.0, shadow_blur: 5.0
+            });
+            env.send_msg(self.display_server_pid, MessagePayload::DrawText { 
+                x: dock_x + 70, y: dock_y - 240, 
+                text: "Calculator".to_string(), 
+                font_size: 16.0, r: 0.9, g: 0.9, b: 0.9, a: 1.0 
+            });
         }
     }
 }
@@ -330,7 +351,7 @@ impl Process for WindowManager {
                         let mut clicked_idx = None;
                         let mut clicked_action = 0; // 0=focus, 1=close, 2=maximize, 3=minimize
                         
-                        let dock_w = 200;
+                        let dock_w = 60 + (self.windows.len() as i32 * 40) + 10;
                         let dock_h = 50;
                         let dock_x = (self.screen_w - dock_w) / 2;
                         let dock_y = self.screen_h - dock_h - 15;
@@ -343,40 +364,22 @@ impl Process for WindowManager {
                             continue;
                         }
 
-                        // Check Terminal Icon collision (Launch App or Unminimize)
-                        if self.mouse_x >= dock_x + 60 && self.mouse_x <= dock_x + 90 &&
-                           self.mouse_y >= dock_y + 10 && self.mouse_y <= dock_y + 40 {
-                            // find if there is a minimized terminal
-                            let mut found_minimized = None;
-                            for (i, win) in self.windows.iter().enumerate() {
-                                if win.state == WindowState::Minimized {
-                                    found_minimized = Some(i);
-                                    break;
-                                }
-                            }
-                            if let Some(idx) = found_minimized {
-                                let win = &mut self.windows[idx];
-                                win.state = WindowState::Normal;
-                                if win.has_overlay {
-                                    env.send_msg(self.display_server_pid, MessagePayload::UpdateHtmlOverlayBounds { 
-                                        id: win.id, x: win.x, y: win.y + title_h, w: win.w, h: win.h - title_h, z: self.windows.len() as u32 - 1, is_active: true
-                                    });
-                                }
-                                let w_owned = self.windows.remove(idx);
-                                self.windows.push(w_owned);
-                            } else {
-                                env.spawn_process("terminal");
-                            }
-                            needs_redraw = true;
-                            continue;
-                        }
+
 
                         // Check Start Menu items
                         if self.start_menu_open {
-                            if self.mouse_x >= 10 && self.mouse_x <= 310 && 
-                               self.mouse_y >= self.screen_h - dock_h - 410 && self.mouse_y <= self.screen_h - dock_h - 10 {
-                                // Clicked inside start menu! Spawn a terminal for now.
-                                env.spawn_process("terminal");
+                            if self.mouse_x >= dock_x && self.mouse_x <= dock_x + 250 && 
+                               self.mouse_y >= dock_y - 320 && self.mouse_y <= dock_y - 20 {
+                                
+                                // Terminal click
+                                if self.mouse_y >= dock_y - 300 && self.mouse_y <= dock_y - 260 {
+                                    env.spawn_process("terminal");
+                                }
+                                // Calculator click
+                                else if self.mouse_y >= dock_y - 250 && self.mouse_y <= dock_y - 210 {
+                                    env.spawn_process("/bin/calc");
+                                }
+                                
                                 self.start_menu_open = false;
                                 needs_redraw = true;
                                 continue;
@@ -385,6 +388,32 @@ impl Process for WindowManager {
                                 self.start_menu_open = false;
                                 needs_redraw = true;
                             }
+                        }
+
+                        // Check Taskbar Windows
+                        let mut clicked_taskbar = false;
+                        for (idx, w) in self.windows.iter_mut().enumerate() {
+                            let icon_x = dock_x + 60 + (idx as i32 * 40);
+                            if self.mouse_x >= icon_x && self.mouse_x <= icon_x + 30 &&
+                               self.mouse_y >= dock_y + 10 && self.mouse_y <= dock_y + 40 {
+                                // Toggle minimize/restore
+                                if w.state == WindowState::Minimized {
+                                    w.state = WindowState::Normal;
+                                    if w.has_overlay {
+                                        env.send_msg(self.display_server_pid, MessagePayload::UpdateHtmlOverlayBounds { 
+                                            id: w.id, x: w.x, y: w.y + title_h, w: w.w, h: w.h - title_h, z: idx as u32, is_active: true
+                                        });
+                                    }
+                                } else {
+                                    w.state = WindowState::Minimized;
+                                }
+                                clicked_taskbar = true;
+                                break;
+                            }
+                        }
+                        if clicked_taskbar {
+                            needs_redraw = true;
+                            continue;
                         }
 
                         // Check window collisions from front to back
