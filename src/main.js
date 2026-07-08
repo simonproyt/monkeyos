@@ -182,8 +182,13 @@ async function initWebGPU() {
         entries: [{ binding: 0, resource: { buffer: uniformBuffer } }]
     });
 
-    let vertices = new Float32Array(10000 * 12); // Max 10k rects
+    let vertices = new Float32Array(10000 * 72); // Max 10k rects (each has 6 vertices * 12 floats)
     let rectCount = 0;
+    
+    const vertexBuffer = device.createBuffer({
+        size: 10000 * 72 * 4, // bytes
+        usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+    });
 
     window.clear_screen_js = function() {
         rectCount = 0;
@@ -230,11 +235,6 @@ async function initWebGPU() {
     window.renderWebGPU = function() {
         if (rectCount === 0) return;
 
-        const vertexBuffer = device.createBuffer({
-            size: rectCount * 72 * 4, // bytes
-            usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
-        });
-        
         device.queue.writeBuffer(vertexBuffer, 0, vertices, 0, rectCount * 72);
         device.queue.writeBuffer(uniformBuffer, 0, new Float32Array([canvas.width, canvas.height]));
 
@@ -255,8 +255,6 @@ async function initWebGPU() {
         passEncoder.end();
 
         device.queue.submit([commandEncoder.finish()]);
-        
-        vertexBuffer.destroy();
     };
     
     // JS side implementations of OS services
@@ -1169,16 +1167,38 @@ async function bootstrap() {
                 if (tc) {
                     tc.width = window.innerWidth;
                     tc.height = window.innerHeight;
-                    window.textCtx = tc.getContext("2d");
+                    window.textCtx = tc.getContext("2d", { alpha: true });
+                    window.textCtxCache = { font: "", fillStyle: "", baseline: "" };
                 }
+            }
+            if (!window.globalTextDecoder) {
+                window.globalTextDecoder = new TextDecoder();
+            }
+            if (!window.textCtxCache) {
+                window.textCtxCache = { font: "", fillStyle: "", baseline: "" };
             }
             if (!window.textCtx) return;
             const wasm = window.__WASI_PROXY.wasm || wasmInstance;
             const memory = new Uint8Array(wasm.exports.memory.buffer);
-            const text = new TextDecoder().decode(memory.subarray(ptr, ptr + len));
-            window.textCtx.font = `${font_size}px monospace`;
-            window.textCtx.fillStyle = `rgba(${r * 255}, ${g * 255}, ${b * 255}, ${a})`;
-            window.textCtx.textBaseline = 'top';
+            const text = window.globalTextDecoder.decode(memory.subarray(ptr, ptr + len));
+            
+            const font = `${font_size}px monospace`;
+            if (window.textCtxCache.font !== font) {
+                window.textCtx.font = font;
+                window.textCtxCache.font = font;
+            }
+            
+            const fillStyle = `rgba(${r * 255}, ${g * 255}, ${b * 255}, ${a})`;
+            if (window.textCtxCache.fillStyle !== fillStyle) {
+                window.textCtx.fillStyle = fillStyle;
+                window.textCtxCache.fillStyle = fillStyle;
+            }
+            
+            if (window.textCtxCache.baseline !== 'top') {
+                window.textCtx.textBaseline = 'top';
+                window.textCtxCache.baseline = 'top';
+            }
+            
             window.textCtx.fillText(text, x, y);
         },
         clear_text_js: () => {

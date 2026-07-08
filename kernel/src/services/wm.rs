@@ -59,6 +59,7 @@ pub struct WindowManager {
     screen_h: i32,
     start_menu_open: bool,
     last_click_time: u64,
+    last_time_str: String,
 }
 
 impl WindowManager {
@@ -78,6 +79,7 @@ impl WindowManager {
             screen_h,
             start_menu_open: false,
             last_click_time: 0,
+            last_time_str: String::new(),
         }
     }
 
@@ -218,17 +220,10 @@ impl WindowManager {
             radius: 20.0, shadow_blur: 15.0
         });
 
-        // Draw System Tray Clock
-        let ms = crate::wasi::call_sys_time_ms();
-        let s = ms / 1000;
-        let m = (s / 60) % 60;
-        let h = (s / 3600) % 24;
-        let time_str = format!("{:02}:{:02}", h, m);
-        
         env.send_msg(self.display_server_pid, MessagePayload::DrawText {
             x: dock_x + dock_w - 60,
             y: dock_y + 26,
-            text: time_str,
+            text: self.last_time_str.clone(),
             font_size: 16.0,
             r: 0.9, g: 0.9, b: 0.9, a: 1.0
         });
@@ -309,7 +304,7 @@ impl Process for WindowManager {
     fn name(&self) -> &str { "window_manager" }
 
     fn tick(&mut self, env: &mut SyscallEnv) -> bool {
-        let mut needs_redraw = true; // Always redraw for immediate mode GUI
+        let mut needs_redraw = false;
 
         while let Some(msg) = env.recv_msg() {
             match msg.payload {
@@ -635,6 +630,16 @@ impl Process for WindowManager {
                 }
                 _ => {}
             }
+        }
+
+        let ms = crate::wasi::call_sys_time_ms();
+        let s = ms / 1000;
+        let m = (s / 60) % 60;
+        let h = (s / 3600) % 24;
+        let time_str = format!("{:02}:{:02}", h, m);
+        if time_str != self.last_time_str {
+            self.last_time_str = time_str;
+            needs_redraw = true;
         }
 
         if needs_redraw {

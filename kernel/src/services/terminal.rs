@@ -50,6 +50,10 @@ impl TerminalProcess {
                 self.screen_buffer.push(line.to_string());
             }
         }
+        
+        while self.screen_buffer.len() > 200 {
+            self.screen_buffer.remove(0);
+        }
     }
 
     fn flush_display(&self, env: &mut SyscallEnv) {
@@ -98,7 +102,11 @@ impl TerminalProcess {
                     if self.cursor_pos == self.input_buffer.len() {
                         current_line.push('█');
                     }
-                    lines.push(current_line);
+                    if let Some(last) = lines.last_mut() {
+                        last.push_str(&current_line);
+                    } else {
+                        lines.push(current_line);
+                    }
                 }
                 
                 env.send_msg(wm_pid, MessagePayload::UpdateTerminalBuffer { 
@@ -225,12 +233,14 @@ impl Process for TerminalProcess {
     fn name(&self) -> &str { "terminal" }
 
     fn tick(&mut self, env: &mut SyscallEnv) -> bool {
+        let mut needs_flush = false;
+        
         if !self.launched {
             if let Some(handle) = crate::api::window::create_window(env, 100, 100, 600, 400, "Terminal") {
                 self.window_id = Some(handle.id);
                 
                 self.print(env, "MonkeyOS Terminal v0.1\nType 'help' for commands.\n\n");
-                self.flush_display(env);
+                needs_flush = true;
 
                 self.launched = true;
             }
@@ -254,27 +264,27 @@ impl Process for TerminalProcess {
                             self.cursor_pos = 0;
                             if let Some(_id) = self.window_id {
                                 self.screen_buffer.clear();
-                                self.flush_display(env);
+                                needs_flush = true;
                             }
                             self.print(env, "\n");
-                            self.flush_display(env);
+                            needs_flush = true;
                         }
                         13 => { // Enter
                             self.input_buffer.insert(self.cursor_pos, '\n');
                             self.cursor_pos += 1;
-                            self.flush_display(env);
+                            needs_flush = true;
                         }
                         8 => { // Backspace
                             if self.cursor_pos > 0 {
                                 self.cursor_pos -= 1;
                                 self.input_buffer.remove(self.cursor_pos);
-                                self.flush_display(env);
+                                needs_flush = true;
                             }
                         }
                         1037 => { // ArrowLeft
                             if self.cursor_pos > 0 {
                                 self.cursor_pos -= 1;
-                                self.flush_display(env);
+                                needs_flush = true;
                             }
                         }
                         1038 => { // ArrowUp
@@ -297,7 +307,7 @@ impl Process for TerminalProcess {
                                     if prev_col == col { break; }
                                     self.cursor_pos += 1;
                                 }
-                                self.flush_display(env);
+                                needs_flush = true;
                             }
                         }
                         1040 => { // ArrowDown
@@ -318,26 +328,26 @@ impl Process for TerminalProcess {
                                     new_pos += 1;
                                 }
                                 self.cursor_pos = new_pos;
-                                self.flush_display(env);
+                                needs_flush = true;
                             }
                         }
                         46 => { // Delete
                             if self.cursor_pos < self.input_buffer.len() {
                                 self.input_buffer.remove(self.cursor_pos);
-                                self.flush_display(env);
+                                needs_flush = true;
                             }
                         }
                         1039 => { // ArrowRight
                             if self.cursor_pos < self.input_buffer.len() {
                                 self.cursor_pos += 1;
-                                self.flush_display(env);
+                                needs_flush = true;
                             }
                         }
                         code if (32..=126).contains(&code) => {
                             let c = (code as u8) as char;
                             self.input_buffer.insert(self.cursor_pos, c);
                             self.cursor_pos += 1;
-                            self.flush_display(env);
+                            needs_flush = true;
                         }
                         _ => {}
                     }
@@ -351,19 +361,19 @@ impl Process for TerminalProcess {
                             if self.cursor_pos > 0 {
                                 self.cursor_pos -= 1;
                                 self.input_buffer.remove(self.cursor_pos);
-                                self.flush_display(env);
+                                needs_flush = true;
                             }
                         }
                         1037 => { // ArrowLeft
                             if self.cursor_pos > 0 {
                                 self.cursor_pos -= 1;
-                                self.flush_display(env);
+                                needs_flush = true;
                             }
                         }
                         1039 => { // ArrowRight
                             if self.cursor_pos < self.input_buffer.len() {
                                 self.cursor_pos += 1;
-                                self.flush_display(env);
+                                needs_flush = true;
                             }
                         }
                         1038 => { // ArrowUp
@@ -371,7 +381,7 @@ impl Process for TerminalProcess {
                                 self.history_index -= 1;
                                 self.input_buffer = self.history[self.history_index].clone();
                                 self.cursor_pos = self.input_buffer.len();
-                                self.flush_display(env);
+                                needs_flush = true;
                             }
                         }
                         1040 => { // ArrowDown
@@ -383,14 +393,14 @@ impl Process for TerminalProcess {
                                     self.input_buffer = self.history[self.history_index].clone();
                                 }
                                 self.cursor_pos = self.input_buffer.len();
-                                self.flush_display(env);
+                                needs_flush = true;
                             }
                         }
                         code if (32..=126).contains(&code) => {
                             let c = (code as u8) as char;
                             self.input_buffer.insert(self.cursor_pos, c);
                             self.cursor_pos += 1;
-                            self.flush_display(env);
+                            needs_flush = true;
                         }
                         _ => {}
                     }
@@ -413,11 +423,20 @@ impl Process for TerminalProcess {
                                 self.screen_buffer.push(ch.to_string());
                             }
                         }
-                        self.flush_display(env);
+                        needs_flush = true;
                     }
                 }
                 _ => {}
             }
+        }
+
+        if self.screen_buffer.len() > 200 {
+            let overflow = self.screen_buffer.len() - 200;
+            self.screen_buffer.drain(0..overflow);
+        }
+
+        if needs_flush {
+            self.flush_display(env);
         }
 
         true
