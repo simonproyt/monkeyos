@@ -40,6 +40,7 @@ struct Window {
     has_overlay: bool,
     state: WindowState,
     restore_rect: Option<(i32, i32, i32, i32)>, // x, y, w, h
+    terminal_lines: Vec<String>,
 }
 
 pub struct WindowManager {
@@ -56,6 +57,7 @@ pub struct WindowManager {
     screen_w: i32,
     screen_h: i32,
     start_menu_open: bool,
+    last_click_time: u64,
 }
 
 impl WindowManager {
@@ -74,6 +76,7 @@ impl WindowManager {
             screen_w,
             screen_h,
             start_menu_open: false,
+            last_click_time: 0,
         }
     }
 
@@ -166,7 +169,8 @@ impl WindowManager {
 
                 });
             }
-            if w.owner == 0 {
+            if w.title != "Terminal" {
+                // It's a WASM GUI app
                 env.send_msg(self.display_server_pid, MessagePayload::DrawGuiApp { 
                     id: w.id, 
                     x: w.x, 
@@ -174,11 +178,35 @@ impl WindowManager {
                     w: w.w, 
                     h: w.h - title_h 
                 });
+            } else {
+                // It's the terminal
+                env.send_msg(self.display_server_pid, MessagePayload::DrawRect { 
+                    x: w.x, y: w.y + title_h, w: w.w, h: w.h - title_h, 
+                    r: 0.1, g: 0.1, b: 0.12, a: 1.0,
+                    radius: 0.0, shadow_blur: 0.0
+                });
+                let mut text_y = w.y + title_h + 20;
+                // Only draw visible lines (very basic scrolling by taking the end)
+                let max_lines = ((w.h - title_h) / 20) as usize;
+                let start_idx = if w.terminal_lines.len() > max_lines {
+                    w.terminal_lines.len() - max_lines
+                } else { 0 };
+                
+                for line in w.terminal_lines.iter().skip(start_idx) {
+                    env.send_msg(self.display_server_pid, MessagePayload::DrawText {
+                        x: w.x + 10,
+                        y: text_y,
+                        text: line.clone(),
+                        font_size: 14.0,
+                        r: 0.8, g: 0.8, b: 0.8, a: 1.0
+                    });
+                    text_y += 20;
+                }
             }
         }
 
         // Draw Floating Dock (Taskbar replacement)
-        let dock_w = 60 + (self.windows.len() as i32 * 40) + 10;
+        let dock_w = 60 + (self.windows.len() as i32 * 40) + 10 + 70; // 70px for clock
         let dock_h = 50;
         let dock_x = (self.screen_w - dock_w) / 2;
         let dock_y = self.screen_h - dock_h - 15;
@@ -187,6 +215,21 @@ impl WindowManager {
             x: dock_x, y: dock_y, w: dock_w, h: dock_h, 
             r: 0.15, g: 0.15, b: 0.18, a: 0.85,
             radius: 20.0, shadow_blur: 15.0
+        });
+
+        // Draw System Tray Clock
+        let ms = crate::wasi::call_sys_time_ms();
+        let s = ms / 1000;
+        let m = (s / 60) % 60;
+        let h = (s / 3600) % 24;
+        let time_str = format!("{:02}:{:02}", h, m);
+        
+        env.send_msg(self.display_server_pid, MessagePayload::DrawText {
+            x: dock_x + dock_w - 60,
+            y: dock_y + 26,
+            text: time_str,
+            font_size: 16.0,
+            r: 0.9, g: 0.9, b: 0.9, a: 1.0
         });
 
         // Draw Start Button (Red Circle)
@@ -269,32 +312,27 @@ impl Process for WindowManager {
 
         while let Some(msg) = env.recv_msg() {
             match msg.payload {
+                MessagePayload::UpdateTerminalBuffer { id, lines } => {
+                    if let Some(w) = self.windows.iter_mut().find(|w| w.id == id) {
+                        w.terminal_lines = lines;
+                        needs_redraw = true;
+                    }
+                }
                 MessagePayload::ScreenSizeChanged { w, h } => {
                     self.screen_w = w;
                     self.screen_h = h;
                     needs_redraw = true;
                 }
                 MessagePayload::CreateWindow { id, x, y, w, h, title, owner } => {
-                    let has_overlay = owner != 0;
                     self.windows.push(Window { 
                         id, x, y, w, h, 
                         title, 
                         owner, 
-                        has_overlay,
+                        has_overlay: false,
                         state: WindowState::Normal,
                         restore_rect: None,
+                        terminal_lines: Vec::new(),
                     });
-                    
-                    let title_h = 30;
-                    if has_overlay {
-                        env.send_msg(self.display_server_pid, MessagePayload::CreateHtmlOverlay { 
-                            id, 
-                            x, 
-                            y: y + title_h, 
-                            w, 
-                            h: h - title_h 
-                        });
-                    }
                     
                     needs_redraw = true;
                 }
@@ -320,9 +358,42 @@ impl Process for WindowManager {
 
                     if let Some(idx) = self.drag_window_index {
                         if let Some(win) = self.windows.get_mut(idx) {
-                            win.x = self.mouse_x - self.drag_offset_x;
-                            win.y = self.mouse_y - self.drag_offset_y;
-
+                            let dock_h = 50;
+                            let mut snapped = false;
+                            if self.mouse_x <= 5 {
+                                win.restore_rect = Some((win.x, win.y, win.w, win.h));
+                                win.state = WindowState::Maximized;
+                                win.x = 0; win.y = 0;
+                                win.w = self.screen_w / 2;
+                                win.h = self.screen_h - dock_h - 20;
+                                snapped = true;
+                            } else if self.mouse_x >= self.screen_w - 5 {
+                                win.restore_rect = Some((win.x, win.y, win.w, win.h));
+                                win.state = WindowState::Maximized;
+                                win.x = self.screen_w / 2; win.y = 0;
+                                win.w = self.screen_w / 2;
+                                win.h = self.screen_h - dock_h - 20;
+                                snapped = true;
+                            } else if self.mouse_y <= 5 {
+                                win.restore_rect = Some((win.x, win.y, win.w, win.h));
+                                win.state = WindowState::Maximized;
+                                win.x = 0; win.y = 0;
+                                win.w = self.screen_w;
+                                win.h = self.screen_h - dock_h - 20;
+                                snapped = true;
+                            }
+                            
+                            if snapped {
+                                if win.has_overlay {
+                                    env.send_msg(self.display_server_pid, MessagePayload::UpdateHtmlOverlayBounds { 
+                                        id: win.id, x: win.x, y: win.y + 30, w: win.w, h: win.h - 30, z: self.windows.len() as u32 - 1, is_active: true
+                                    });
+                                }
+                                self.drag_window_index = None;
+                            } else {
+                                win.x = self.mouse_x - self.drag_offset_x;
+                                win.y = self.mouse_y - self.drag_offset_y;
+                            }
                             needs_redraw = true;
                         }
                     } else if let Some(idx) = self.resize_window_index {
@@ -351,7 +422,7 @@ impl Process for WindowManager {
                         let mut clicked_idx = None;
                         let mut clicked_action = 0; // 0=focus, 1=close, 2=maximize, 3=minimize
                         
-                        let dock_w = 60 + (self.windows.len() as i32 * 40) + 10;
+                        let dock_w = 60 + (self.windows.len() as i32 * 40) + 10 + 70;
                         let dock_h = 50;
                         let dock_x = (self.screen_w - dock_w) / 2;
                         let dock_y = self.screen_h - dock_h - 15;
@@ -470,6 +541,13 @@ impl Process for WindowManager {
                                     self.drag_window_index = Some(self.windows.len() - 1); // will move to end
                                     self.drag_offset_x = self.mouse_x - win.x;
                                     self.drag_offset_y = self.mouse_y - win.y;
+
+                                    // Double click maximize
+                                    let now = crate::wasi::call_sys_time_ms();
+                                    if now - self.last_click_time < 300 {
+                                        clicked_action = 2; // Maximize
+                                    }
+                                    self.last_click_time = now;
                                 }
                                 break;
                             }

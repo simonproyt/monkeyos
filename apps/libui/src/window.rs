@@ -19,6 +19,12 @@ impl Window {
         }
     }
 
+    pub fn draw_background(&self, r: f32, g: f32, b: f32) {
+        unsafe {
+            crate::draw_rect_js(self.x as f32, self.y as f32, self.w as f32, self.h as f32, r, g, b, 1.0, 0.0, 0.0);
+        }
+    }
+
     pub fn handle_mouse_down(&mut self, _mx: i32, _my: i32) -> bool {
         // Handled by wm.rs
         false

@@ -233,6 +233,17 @@ pub unsafe extern "C" fn kernel_push_screen_size(kernel: *mut Kernel, w: i32, h:
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn kernel_wasi_print_char(kernel: *mut Kernel, term_id: u32, c: u32) {
+    let k = unsafe { &mut *kernel };
+    let term_pid = k.registry.lookup("terminal").unwrap_or(0);
+    k.ipc.send(Message {
+        sender: 0,
+        receiver: term_pid,
+        payload: MessagePayload::WasiPrintChar { id: term_id, c: c as u8 }
+    });
+}
+
+#[no_mangle]
 pub extern "C" fn sys_fd_write(fd: u32, iovs_ptr: u32, iovs_len: u32, nwritten_ptr: u32) -> u32 {
     crate::wasi::handle_fd_write(fd, iovs_ptr, iovs_len, nwritten_ptr)
 }

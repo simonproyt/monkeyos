@@ -6,6 +6,7 @@ pub struct TerminalProcess {
     pid: ProcessId,
     launched: bool,
     window_id: Option<u32>,
+    screen_buffer: Vec<String>,
     input_buffer: String,
     prompt: String,
     cursor_pos: usize,
@@ -21,6 +22,7 @@ impl TerminalProcess {
             pid, 
             launched: false, 
             window_id: None,
+            screen_buffer: Vec::new(),
             input_buffer: String::new(),
             prompt: String::from("root@monkeyos:/# "),
             cursor_pos: 0,
@@ -35,42 +37,75 @@ impl TerminalProcess {
         self.prompt = format!("root@monkeyos:{}# ", self.cwd);
     }
 
-    fn print(&self, env: &mut SyscallEnv, text: &str) {
-        if let Some(id) = self.window_id {
-            if let Some(display_pid) = env.lookup_service("display") {
-                env.send_msg(display_pid, MessagePayload::AppendHtmlOverlayText { 
-                    id, 
-                    text: text.to_string() 
-                });
-            }
-        }
-    }
-
-    fn redraw_input_line(&self, env: &mut SyscallEnv) {
-        if let Some(id) = self.window_id {
-            if let Some(display_pid) = env.lookup_service("display") {
-                let prompt = if self.edit_state.is_some() {
-                    "".to_string()
+    fn print(&mut self, env: &mut SyscallEnv, text: &str) {
+        let lines = text.split('\n');
+        for (i, line) in lines.enumerate() {
+            if i == 0 {
+                if let Some(last) = self.screen_buffer.last_mut() {
+                    last.push_str(line);
                 } else {
-                    self.prompt.clone()
-                };
-                env.send_msg(display_pid, MessagePayload::UpdateHtmlOverlayInputLine { 
-                    id, 
-                    prompt,
-                    input: self.input_buffer.clone(),
-                    cursor_pos: self.cursor_pos as u32,
-                });
+                    self.screen_buffer.push(line.to_string());
+                }
+            } else {
+                self.screen_buffer.push(line.to_string());
             }
         }
     }
 
-    fn redraw_editor(&self, env: &mut SyscallEnv) {
+    fn flush_display(&self, env: &mut SyscallEnv) {
         if let Some(id) = self.window_id {
-            if let Some(display_pid) = env.lookup_service("display") {
-                env.send_msg(display_pid, MessagePayload::DrawEditor { 
+            if let Some(wm_pid) = env.lookup_service("wm") {
+                let mut lines = self.screen_buffer.clone();
+                
+                if let Some(ref edit_content) = self.edit_state {
+                    // Editor mode: append the file content
+                    let mut editor_lines: Vec<String> = edit_content.split('\n').map(|s| s.to_string()).collect();
+                    if editor_lines.is_empty() {
+                        editor_lines.push(String::new());
+                    }
+                    // Add cursor
+                    let mut col = 0;
+                    let mut row = 0;
+                    let mut current_pos = 0;
+                    for (i, c) in edit_content.chars().enumerate() {
+                        if current_pos == self.cursor_pos { break; }
+                        if c == '\n' {
+                            row += 1;
+                            col = 0;
+                        } else {
+                            col += 1;
+                        }
+                        current_pos += 1;
+                    }
+                    if row < editor_lines.len() {
+                        let line = &mut editor_lines[row];
+                        if col <= line.len() {
+                            line.insert(col, '█');
+                        } else {
+                            line.push('█');
+                        }
+                    }
+                    lines.extend(editor_lines);
+                } else {
+                    // Normal mode: append the input buffer with prompt and cursor
+                    let mut current_line = format!("{}", self.prompt);
+                    let mut col = 0;
+                    for (i, c) in self.input_buffer.chars().enumerate() {
+                        if i == self.cursor_pos {
+                            current_line.push('█');
+                        }
+                        current_line.push(c);
+                        col += 1;
+                    }
+                    if self.cursor_pos == self.input_buffer.len() {
+                        current_line.push('█');
+                    }
+                    lines.push(current_line);
+                }
+                
+                env.send_msg(wm_pid, MessagePayload::UpdateTerminalBuffer { 
                     id, 
-                    content: self.input_buffer.clone(), 
-                    cursor_pos: self.cursor_pos as u32 
+                    lines
                 });
             }
         }
@@ -79,18 +114,15 @@ impl TerminalProcess {
     fn execute_command(&mut self, env: &mut SyscallEnv) {
         let cmd = self.input_buffer.trim().to_string();
         
-        // Finalize current line (remove cursor block)
-        if let Some(id) = self.window_id {
-            crate::wasi::print_direct(id, "\n");
-        } else {
-            self.print(env, "\n");
-        }
+        // Finalize current line (print what the user typed + newline)
+        self.print(env, &format!("{}\n", self.input_buffer));
 
         if cmd.is_empty() {
             self.input_buffer.clear();
             self.cursor_pos = 0;
-            self.print(env, &self.prompt);
-            self.redraw_input_line(env);
+            let prompt = self.prompt.clone();
+            self.print(env, &prompt);
+            self.flush_display(env);
             return;
         }
 
@@ -104,9 +136,8 @@ impl TerminalProcess {
             }
             "clear" => {
                 if let Some(id) = self.window_id {
-                    if let Some(display_pid) = env.lookup_service("display") {
-                        env.send_msg(display_pid, MessagePayload::ClearHtmlOverlayText { id });
-                    }
+                    self.screen_buffer.clear();
+                    self.flush_display(env);
                 }
             }
             "edit" => {
@@ -126,7 +157,7 @@ impl TerminalProcess {
                     self.edit_state = Some(filename);
                     self.input_buffer = file_content;
                     self.cursor_pos = self.input_buffer.len();
-                    self.redraw_editor(env);
+                    self.flush_display(env);
                     return;
                 }
             }
@@ -191,8 +222,9 @@ impl TerminalProcess {
         self.history_index = self.history.len();
         self.input_buffer.clear();
         self.cursor_pos = 0;
-        self.print(env, &self.prompt); // Output a newline/prompt so the replace_last_line has a target
-        self.redraw_input_line(env);
+        let prompt = self.prompt.clone();
+        self.print(env, &prompt);
+        self.flush_display(env);
     }
 }
 
@@ -206,8 +238,9 @@ impl Process for TerminalProcess {
                 self.window_id = Some(handle.id);
                 
                 self.print(env, "MonkeyOS Terminal v0.1\nType 'help' for commands.\n\n");
-                self.print(env, &self.prompt);
-                self.redraw_input_line(env);
+                let prompt = self.prompt.clone();
+                self.print(env, &prompt);
+                self.flush_display(env);
 
                 self.launched = true;
             }
@@ -230,30 +263,30 @@ impl Process for TerminalProcess {
                             self.input_buffer.clear();
                             self.cursor_pos = 0;
                             if let Some(id) = self.window_id {
-                                if let Some(display_pid) = env.lookup_service("display") {
-                                    env.send_msg(display_pid, MessagePayload::ClearHtmlOverlayText { id });
-                                }
+                                self.screen_buffer.clear();
+                                self.flush_display(env);
                             }
                             self.print(env, "\n");
-                            self.print(env, &self.prompt);
-                            self.redraw_input_line(env);
+                            let prompt = self.prompt.clone();
+                            self.print(env, &prompt);
+                            self.flush_display(env);
                         }
                         13 => { // Enter
                             self.input_buffer.insert(self.cursor_pos, '\n');
                             self.cursor_pos += 1;
-                            self.redraw_editor(env);
+                            self.flush_display(env);
                         }
                         8 => { // Backspace
                             if self.cursor_pos > 0 {
                                 self.cursor_pos -= 1;
                                 self.input_buffer.remove(self.cursor_pos);
-                                self.redraw_editor(env);
+                                self.flush_display(env);
                             }
                         }
                         1037 => { // ArrowLeft
                             if self.cursor_pos > 0 {
                                 self.cursor_pos -= 1;
-                                self.redraw_editor(env);
+                                self.flush_display(env);
                             }
                         }
                         1038 => { // ArrowUp
@@ -276,7 +309,7 @@ impl Process for TerminalProcess {
                                     if prev_col == col { break; }
                                     self.cursor_pos += 1;
                                 }
-                                self.redraw_editor(env);
+                                self.flush_display(env);
                             }
                         }
                         1040 => { // ArrowDown
@@ -297,26 +330,26 @@ impl Process for TerminalProcess {
                                     new_pos += 1;
                                 }
                                 self.cursor_pos = new_pos;
-                                self.redraw_editor(env);
+                                self.flush_display(env);
                             }
                         }
                         46 => { // Delete
                             if self.cursor_pos < self.input_buffer.len() {
                                 self.input_buffer.remove(self.cursor_pos);
-                                self.redraw_editor(env);
+                                self.flush_display(env);
                             }
                         }
                         1039 => { // ArrowRight
                             if self.cursor_pos < self.input_buffer.len() {
                                 self.cursor_pos += 1;
-                                self.redraw_editor(env);
+                                self.flush_display(env);
                             }
                         }
                         code if (32..=126).contains(&code) => {
                             let c = (code as u8) as char;
                             self.input_buffer.insert(self.cursor_pos, c);
                             self.cursor_pos += 1;
-                            self.redraw_editor(env);
+                            self.flush_display(env);
                         }
                         _ => {}
                     }
@@ -330,19 +363,19 @@ impl Process for TerminalProcess {
                             if self.cursor_pos > 0 {
                                 self.cursor_pos -= 1;
                                 self.input_buffer.remove(self.cursor_pos);
-                                self.redraw_input_line(env);
+                                self.flush_display(env);
                             }
                         }
                         1037 => { // ArrowLeft
                             if self.cursor_pos > 0 {
                                 self.cursor_pos -= 1;
-                                self.redraw_input_line(env);
+                                self.flush_display(env);
                             }
                         }
                         1039 => { // ArrowRight
                             if self.cursor_pos < self.input_buffer.len() {
                                 self.cursor_pos += 1;
-                                self.redraw_input_line(env);
+                                self.flush_display(env);
                             }
                         }
                         1038 => { // ArrowUp
@@ -350,7 +383,7 @@ impl Process for TerminalProcess {
                                 self.history_index -= 1;
                                 self.input_buffer = self.history[self.history_index].clone();
                                 self.cursor_pos = self.input_buffer.len();
-                                self.redraw_input_line(env);
+                                self.flush_display(env);
                             }
                         }
                         1040 => { // ArrowDown
@@ -362,14 +395,14 @@ impl Process for TerminalProcess {
                                     self.input_buffer = self.history[self.history_index].clone();
                                 }
                                 self.cursor_pos = self.input_buffer.len();
-                                self.redraw_input_line(env);
+                                self.flush_display(env);
                             }
                         }
                         code if (32..=126).contains(&code) => {
                             let c = (code as u8) as char;
                             self.input_buffer.insert(self.cursor_pos, c);
                             self.cursor_pos += 1;
-                            self.redraw_input_line(env);
+                            self.flush_display(env);
                         }
                         _ => {}
                     }
@@ -378,6 +411,21 @@ impl Process for TerminalProcess {
                 MessagePayload::WindowClosed { id } => {
                     if Some(id) == self.window_id {
                         self.window_id = None;
+                    }
+                }
+                MessagePayload::WasiPrintChar { id, c } => {
+                    if Some(id) == self.window_id {
+                        let ch = c as char;
+                        if ch == '\n' {
+                            self.screen_buffer.push(String::new());
+                        } else {
+                            if let Some(last) = self.screen_buffer.last_mut() {
+                                last.push(ch);
+                            } else {
+                                self.screen_buffer.push(ch.to_string());
+                            }
+                        }
+                        self.flush_display(env);
                     }
                 }
                 _ => {}

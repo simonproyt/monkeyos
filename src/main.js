@@ -9,11 +9,7 @@ let pendingLastLine = {};
 
 
 function wasi_print_js(id, text) {
-    if (id !== 0) {
-        append_html_overlay_text_js(id, text);
-    } else {
-        console.log("WASI OUT:", text);
-    }
+    console.log("WASI OUT:", text);
 }
 
 function escapeHtml(str) {
@@ -198,6 +194,10 @@ async function initWebGPU() {
         const idx = rectCount * 72; // 6 vertices * 12 floats
         
         const rect = {x, y, w, h, r, g, b, a, radius, shadow_blur};
+
+        if (window.textCtx && a > 0.8) {
+            window.textCtx.clearRect(x, y, w, h);
+        }
         
         // Inflate geometry bounds to include the shadow blur margin
         const padding = rect.shadow_blur * 2.0;
@@ -515,8 +515,15 @@ async function bootstrap() {
                                 vfs[targetPath].timestamp = Date.now();
                                 saveVfs();
                             } else {
-                                const term_id = window.__WASI_PROXY.current_terminal_id || 1;
-                                window.append_html_overlay_text_js(term_id, outStr);
+                                if (fd === 1 || fd === 2) {
+                                    // stdout or stderr
+                                    const term_id = window.__WASI_PROXY.current_terminal_id;
+                                    if (term_id && window.__WASI_PROXY.kernel) {
+                                        for (let i = 0; i < outStr.length; i++) {
+                                            window.__WASI_PROXY.kernel.kernel_wasi_print_char(window.__WASI_PROXY.kernelPtr, term_id, outStr.charCodeAt(i));
+                                        }
+                                    }
+                                }
                             }
                             
                             return 0; // SUCCESS
@@ -1146,6 +1153,9 @@ async function bootstrap() {
             const str = new TextDecoder().decode(memory.subarray(ptr, ptr + len));
             console.log(str);
         },
+        sys_time_ms: () => {
+            return BigInt(Date.now());
+        },
         wasi_print_js: (id, ptr, len) => {
             const wasm = window.__WASI_PROXY.wasm || wasmInstance;
             const memory = new Uint8Array(wasm.exports.memory.buffer);
@@ -1390,6 +1400,7 @@ async function bootstrap() {
         },
         sys_fd_write: (fd, iovs_ptr, iovs_len, nwritten_ptr) => exports.sys_fd_write(fd, iovs_ptr, iovs_len, nwritten_ptr),
         sys_fd_read: (fd, iovs_ptr, iovs_len, nread_ptr) => exports.sys_fd_read(fd, iovs_ptr, iovs_len, nread_ptr),
+        kernel_wasi_print_char: (kernelPtr, term_id, charCode) => exports.kernel_wasi_print_char(kernelPtr, term_id, charCode),
     };
     
     window.__WASI_PROXY.kernel = kernel;

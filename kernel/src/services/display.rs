@@ -51,27 +51,6 @@ impl crate::process::Process for DisplayServer {
                 MessagePayload::ClearText => {
                     unsafe { clear_text_js() };
                 }
-                MessagePayload::CreateHtmlOverlay { id, x, y, w, h } => {
-                    unsafe { create_html_overlay_js(id, x as f32, y as f32, w as f32, h as f32) };
-                }
-                MessagePayload::DestroyHtmlOverlay { id } => {
-                    unsafe { destroy_html_overlay_js(id) };
-                }
-                MessagePayload::UpdateHtmlOverlayBounds { id, x, y, w, h, z, is_active } => {
-                    unsafe { update_html_overlay_bounds_js(id, x as f32, y as f32, w as f32, h as f32, z, is_active as u32) };
-                }
-                MessagePayload::AppendHtmlOverlayText { id, text } => {
-                    unsafe { append_html_overlay_text_js(id, text.as_ptr(), text.len()) };
-                }
-                MessagePayload::UpdateHtmlOverlayInputLine { id, prompt, input, cursor_pos } => {
-                    unsafe { update_html_overlay_input_line_js(id, prompt.as_ptr(), prompt.len(), input.as_ptr(), input.len(), cursor_pos) };
-                }
-                MessagePayload::DrawEditor { id, content, cursor_pos } => {
-                    unsafe { draw_editor_js(id, content.as_ptr(), content.len(), cursor_pos) };
-                }
-                MessagePayload::ClearHtmlOverlayText { id } => {
-                    unsafe { clear_html_overlay_text_js(id) };
-                }
                 _ => {}
             }
         }
