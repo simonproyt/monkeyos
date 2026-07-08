@@ -37,7 +37,7 @@ impl TerminalProcess {
         self.prompt = format!("root@monkeyos:{}# ", self.cwd);
     }
 
-    fn print(&mut self, env: &mut SyscallEnv, text: &str) {
+    fn print(&mut self, _env: &mut SyscallEnv, text: &str) {
         let lines = text.split('\n');
         for (i, line) in lines.enumerate() {
             if i == 0 {
@@ -67,7 +67,7 @@ impl TerminalProcess {
                     let mut col = 0;
                     let mut row = 0;
                     let mut current_pos = 0;
-                    for (i, c) in edit_content.chars().enumerate() {
+                    for (_i, c) in edit_content.chars().enumerate() {
                         if current_pos == self.cursor_pos { break; }
                         if c == '\n' {
                             row += 1;
@@ -89,13 +89,11 @@ impl TerminalProcess {
                 } else {
                     // Normal mode: append the input buffer with prompt and cursor
                     let mut current_line = format!("{}", self.prompt);
-                    let mut col = 0;
                     for (i, c) in self.input_buffer.chars().enumerate() {
                         if i == self.cursor_pos {
                             current_line.push('█');
                         }
                         current_line.push(c);
-                        col += 1;
                     }
                     if self.cursor_pos == self.input_buffer.len() {
                         current_line.push('█');
@@ -115,14 +113,11 @@ impl TerminalProcess {
         let cmd = self.input_buffer.trim().to_string();
         
         // Finalize current line (print what the user typed + newline)
-        self.print(env, &format!("{}\n", self.input_buffer));
+        self.print(env, &format!("{}{}\n", self.prompt, self.input_buffer));
 
         if cmd.is_empty() {
             self.input_buffer.clear();
             self.cursor_pos = 0;
-            let prompt = self.prompt.clone();
-            self.print(env, &prompt);
-            self.flush_display(env);
             return;
         }
 
@@ -135,7 +130,7 @@ impl TerminalProcess {
                 self.print(env, "Try: ls /bin\n");
             }
             "clear" => {
-                if let Some(id) = self.window_id {
+                if let Some(_id) = self.window_id {
                     self.screen_buffer.clear();
                     self.flush_display(env);
                 }
@@ -222,9 +217,6 @@ impl TerminalProcess {
         self.history_index = self.history.len();
         self.input_buffer.clear();
         self.cursor_pos = 0;
-        let prompt = self.prompt.clone();
-        self.print(env, &prompt);
-        self.flush_display(env);
     }
 }
 
@@ -238,8 +230,6 @@ impl Process for TerminalProcess {
                 self.window_id = Some(handle.id);
                 
                 self.print(env, "MonkeyOS Terminal v0.1\nType 'help' for commands.\n\n");
-                let prompt = self.prompt.clone();
-                self.print(env, &prompt);
                 self.flush_display(env);
 
                 self.launched = true;
@@ -262,13 +252,11 @@ impl Process for TerminalProcess {
                             self.edit_state = None;
                             self.input_buffer.clear();
                             self.cursor_pos = 0;
-                            if let Some(id) = self.window_id {
+                            if let Some(_id) = self.window_id {
                                 self.screen_buffer.clear();
                                 self.flush_display(env);
                             }
                             self.print(env, "\n");
-                            let prompt = self.prompt.clone();
-                            self.print(env, &prompt);
                             self.flush_display(env);
                         }
                         13 => { // Enter

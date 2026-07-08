@@ -1,6 +1,7 @@
+#![allow(static_mut_refs)]
+
 use libui::window::Window;
 use libui::{Button, Label, Widget};
-use std::collections::HashMap;
 
 static mut WINDOW: Option<Window> = None;
 static mut LABEL_DISPLAY: Option<Label> = None;
@@ -29,7 +30,7 @@ pub extern "C" fn init() {
         ];
 
         for (text, x, y) in layout.iter() {
-            let mut btn = Button::new(text, 45, 45);
+            let btn = Button::new(text, 45, 45);
             btns.push((btn, *x, *y));
         }
         BUTTONS = Some(btns);

@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use crate::process::ProcessId;
 use crate::ipc::MessagePayload;
 use crate::sys::SyscallEnv;

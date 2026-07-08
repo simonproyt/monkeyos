@@ -1,4 +1,3 @@
-use std::alloc::{GlobalAlloc, Layout};
 
 pub mod window;
 
@@ -11,9 +10,9 @@ extern "C" {
 
 pub trait Widget {
     fn draw(&self, x: i32, y: i32);
-    fn handle_mouse_move(&mut self, mx: i32, my: i32, x: i32, y: i32) -> bool { false }
-    fn handle_mouse_down(&mut self, mx: i32, my: i32, x: i32, y: i32) -> bool { false }
-    fn handle_mouse_up(&mut self, mx: i32, my: i32, x: i32, y: i32) -> bool { false }
+    fn handle_mouse_move(&mut self, _mx: i32, _my: i32, _x: i32, _y: i32) -> bool { false }
+    fn handle_mouse_down(&mut self, _mx: i32, _my: i32, _x: i32, _y: i32) -> bool { false }
+    fn handle_mouse_up(&mut self, _mx: i32, _my: i32, _x: i32, _y: i32) -> bool { false }
 }
 
 pub struct Label {

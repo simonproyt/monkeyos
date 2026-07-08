@@ -119,7 +119,7 @@ impl Kernel {
         while let Some(msg) = self.ipc.receive(0) {
             match msg.payload {
                 crate::ipc::MessagePayload::SpawnTerminal => {
-                    let terminal_pid = self.pm.spawn(|pid| Box::new(crate::services::terminal::TerminalProcess::new(pid)));
+                    let _terminal_pid = self.pm.spawn(|pid| Box::new(crate::services::terminal::TerminalProcess::new(pid)));
                     // Note: We don't overwrite the registry's "terminal" entry unless we want to,
                     // but it's fine for now as it's just used for looking up the default terminal.
                 }
