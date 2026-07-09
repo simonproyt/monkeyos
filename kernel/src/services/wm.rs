@@ -1,4 +1,4 @@
-#![allow(dead_code)]
+
 use crate::process::{Process, ProcessId};
 use crate::sys::SyscallEnv;
 use crate::ipc::MessagePayload;
@@ -20,13 +20,8 @@ enum WindowState {
 #[derive(Clone, Copy, PartialEq)]
 enum ResizeEdge {
     None,
-    Left,
     Right,
-    Top,
     Bottom,
-    TopLeft,
-    TopRight,
-    BottomLeft,
     BottomRight,
 }
 
@@ -38,7 +33,6 @@ struct Window {
     h: i32,
     title: String,
     owner: ProcessId,
-    has_overlay: bool,
     state: WindowState,
     restore_rect: Option<(i32, i32, i32, i32)>, // x, y, w, h
     terminal_lines: Vec<String>,
@@ -97,18 +91,6 @@ impl WindowManager {
         // Draw windows from back to front
         for (i, w) in self.windows.iter().enumerate() {
             if w.state == WindowState::Minimized {
-                if w.has_overlay {
-                    // We need to hide the overlay when minimized
-                    env.send_msg(self.display_server_pid, MessagePayload::UpdateHtmlOverlayBounds { 
-                        id: w.id, 
-                        x: -9999, // Move offscreen to hide
-                        y: -9999,
-                        w: w.w,
-                        h: w.h,
-                        z: i as u32,
-                    is_active: !self.start_menu_open && i == self.windows.len() - 1
-                });
-                }
                 continue;
             }
 
@@ -160,18 +142,6 @@ impl WindowManager {
                 radius: 9.0, shadow_blur: 0.0
             });
 
-            if w.has_overlay {
-                env.send_msg(self.display_server_pid, MessagePayload::UpdateHtmlOverlayBounds { 
-                    id: w.id, 
-                    x: w.x, 
-                    y: w.y + title_h,
-                    w: w.w,
-                    h: w.h - title_h,
-                    z: i as u32,
-                    is_active
-
-                });
-            }
             if w.title != "Terminal" {
                 // It's a WASM GUI app
                 env.send_msg(self.display_server_pid, MessagePayload::DrawGuiApp { 
@@ -234,24 +204,37 @@ impl WindowManager {
             r: 0.9, g: 0.4, b: 0.4, a: 1.0,
             radius: 15.0, shadow_blur: 5.0
         });
+        env.send_msg(self.display_server_pid, MessagePayload::DrawCenteredText {
+            x: dock_x + 25, y: dock_y + 25,
+            text: "🐒".to_string(),
+            font_size: 18.0,
+            r: 1.0, g: 1.0, b: 1.0, a: 1.0
+        });
         
         // Draw dynamically for windows
         for (idx, w) in self.windows.iter().enumerate() {
             let icon_x = dock_x + 60 + (idx as i32 * 40);
             
-            // Choose a color based on title hash or hardcoded
-            let (r, g, b) = if w.title == "Terminal" {
-                (0.2, 0.8, 0.4)
+            // Choose a color and emoji based on title
+            let (r, g, b, emoji) = if w.title == "Terminal" {
+                (0.2, 0.8, 0.4, "💻")
             } else if w.title == "Calculator" {
-                (0.8, 0.6, 0.2)
+                (0.8, 0.6, 0.2, "🖩")
             } else {
-                (0.4, 0.4, 0.8)
+                (0.4, 0.4, 0.8, "📁")
             };
 
             env.send_msg(self.display_server_pid, MessagePayload::DrawRect { 
                 x: icon_x, y: dock_y + 10, w: 30, h: 30, 
                 r, g, b, a: 1.0,
                 radius: 8.0, shadow_blur: 5.0
+            });
+            
+            env.send_msg(self.display_server_pid, MessagePayload::DrawCenteredText {
+                x: icon_x + 15, y: dock_y + 25,
+                text: emoji.to_string(),
+                font_size: 18.0,
+                r: 1.0, g: 1.0, b: 1.0, a: 1.0
             });
 
             // Draw indicator dot
@@ -278,6 +261,11 @@ impl WindowManager {
                 r: 0.2, g: 0.8, b: 0.4, a: 1.0,
                 radius: 8.0, shadow_blur: 5.0
             });
+            env.send_msg(self.display_server_pid, MessagePayload::DrawCenteredText {
+                x: dock_x + 40, y: dock_y - 280,
+                text: "💻".to_string(),
+                font_size: 20.0, r: 1.0, g: 1.0, b: 1.0, a: 1.0
+            });
             env.send_msg(self.display_server_pid, MessagePayload::DrawText { 
                 x: dock_x + 70, y: dock_y - 290, 
                 text: "Terminal".to_string(), 
@@ -289,6 +277,11 @@ impl WindowManager {
                 x: dock_x + 20, y: dock_y - 250, w: 40, h: 40, 
                 r: 0.8, g: 0.6, b: 0.2, a: 1.0,
                 radius: 8.0, shadow_blur: 5.0
+            });
+            env.send_msg(self.display_server_pid, MessagePayload::DrawCenteredText {
+                x: dock_x + 40, y: dock_y - 230,
+                text: "🖩".to_string(),
+                font_size: 20.0, r: 1.0, g: 1.0, b: 1.0, a: 1.0
             });
             env.send_msg(self.display_server_pid, MessagePayload::DrawText { 
                 x: dock_x + 70, y: dock_y - 240, 
@@ -324,7 +317,6 @@ impl Process for WindowManager {
                         id, x, y, w, h, 
                         title, 
                         owner, 
-                        has_overlay: false,
                         state: WindowState::Normal,
                         restore_rect: None,
                         terminal_lines: Vec::new(),
@@ -380,11 +372,6 @@ impl Process for WindowManager {
                             }
                             
                             if snapped {
-                                if win.has_overlay {
-                                    env.send_msg(self.display_server_pid, MessagePayload::UpdateHtmlOverlayBounds { 
-                                        id: win.id, x: win.x, y: win.y + 30, w: win.w, h: win.h - 30, z: self.windows.len() as u32 - 1, is_active: true
-                                    });
-                                }
                                 self.drag_window_index = None;
                             } else {
                                 win.x = self.mouse_x - self.drag_offset_x;
@@ -431,8 +418,6 @@ impl Process for WindowManager {
                             continue;
                         }
 
-
-
                         // Check Start Menu items
                         if self.start_menu_open {
                             if self.mouse_x >= dock_x && self.mouse_x <= dock_x + 250 && 
@@ -466,11 +451,6 @@ impl Process for WindowManager {
                                 // Toggle minimize/restore
                                 if w.state == WindowState::Minimized {
                                     w.state = WindowState::Normal;
-                                    if w.has_overlay {
-                                        env.send_msg(self.display_server_pid, MessagePayload::UpdateHtmlOverlayBounds { 
-                                            id: w.id, x: w.x, y: w.y + title_h, w: w.w, h: w.h - title_h, z: idx as u32, is_active: true
-                                        });
-                                    }
                                 } else {
                                     w.state = WindowState::Minimized;
                                 }
@@ -552,7 +532,6 @@ impl Process for WindowManager {
                         if let Some(idx) = clicked_idx {
                             if clicked_action == 1 {
                                 let win = &self.windows[idx];
-                                env.send_msg(self.display_server_pid, MessagePayload::DestroyHtmlOverlay { id: win.id });
                                 env.send_msg(win.owner, MessagePayload::WindowClosed { id: win.id });
                                 self.windows.remove(idx);
                             } else if clicked_action == 2 { // Maximize
@@ -569,21 +548,11 @@ impl Process for WindowManager {
                                     win.w = self.screen_w;
                                     win.h = self.screen_h - dock_h - 20; // leave room for dock
                                 }
-                                if win.has_overlay {
-                                    env.send_msg(self.display_server_pid, MessagePayload::UpdateHtmlOverlayBounds { 
-                                        id: win.id, x: win.x, y: win.y + title_h, w: win.w, h: win.h - title_h, z: self.windows.len() as u32 - 1, is_active: true
-                                    });
-                                }
                                 let win_owned = self.windows.remove(idx);
                                 self.windows.push(win_owned);
                             } else if clicked_action == 3 { // Minimize
                                 let win = &mut self.windows[idx];
                                 win.state = WindowState::Minimized;
-                                if win.has_overlay {
-                                    env.send_msg(self.display_server_pid, MessagePayload::UpdateHtmlOverlayBounds { 
-                                        id: win.id, x: -9999, y: -9999, w: win.w, h: win.h, z: idx as u32, is_active: false
-                                    });
-                                }
                             } else {
                                 // Bring to front
                                 let win_owned = self.windows.remove(idx);

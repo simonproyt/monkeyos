@@ -4,9 +4,6 @@ window.__WASI_PROXY = {
     kernel: null,
 };
 
-let pendingText = {};
-let pendingLastLine = {};
-
 
 function wasi_print_js(id, text) {
     console.log("WASI OUT:", text);
@@ -261,65 +258,6 @@ async function initWebGPU() {
     
     // pending variables moved to global scope
     
-    window.create_html_overlay_js = function(id, x, y, w, h) {
-        if (document.getElementById('overlay-' + id)) return;
-        const div = document.createElement('div');
-        div.id = 'overlay-' + id;
-        div.className = 'os-window-content';
-        div.style.position = 'absolute';
-        div.style.left = x + 'px';
-        div.style.top = y + 'px';
-        div.style.width = w + 'px';
-        div.style.height = h + 'px';
-        div.style.zIndex = '100';
-        div.style.pointerEvents = 'none'; // Let WebGPU handle clicks
-        div.style.color = '#0f0'; // Retro terminal green
-        div.style.fontFamily = 'monospace';
-        div.style.padding = '10px';
-        div.style.boxSizing = 'border-box';
-        div.style.overflow = 'hidden';
-        div.style.whiteSpace = 'pre-wrap';
-        div.style.wordBreak = 'break-all';
-        div.style.transition = 'opacity 0.2s';
-        div.style.backgroundColor = 'transparent'; 
-        div.style.backdropFilter = 'blur(12px)'; // Frosted glass effect
-        div.style.webkitBackdropFilter = 'blur(12px)';
-        document.body.appendChild(div);
-
-        if (pendingText[id]) {
-            // process pending text for backspaces
-            let pText = pendingText[id];
-            let res = "";
-            for (let i = 0; i < pText.length; i++) {
-                if (pText[i] === '\x08') {
-                    res = res.slice(0, -1);
-                } else {
-                    res += pText[i];
-                }
-            }
-            div.textContent = res;
-            delete pendingText[id];
-        }
-        
-        if (pendingLastLine[id]) {
-            let { prompt, input, cursor_pos } = pendingLastLine[id];
-            window.update_html_overlay_input_line_js(id, prompt, input, cursor_pos);
-            delete pendingLastLine[id];
-        }
-    };
-
-    window.update_html_overlay_bounds_js = function(id, x, y, w, h, z, is_active) {
-        const div = document.getElementById('overlay-' + id);
-        if (div) {
-            div.style.left = x + 'px';
-            div.style.top = y + 'px';
-            div.style.width = w + 'px';
-            div.style.height = h + 'px';
-            div.style.zIndex = 100 + z; // Draw on TOP of WebGPU canvas!
-            div.style.opacity = is_active ? '1.0' : '0.15';
-        }
-    };
-
     console.log("[ OK ] WebGPU subsystem initialized.");
     return { device, context, renderWebGPU };
 }
@@ -1201,6 +1139,48 @@ async function bootstrap() {
             
             window.textCtx.fillText(text, x, y);
         },
+        draw_centered_text_js: (x, y, ptr, len, font_size, r, g, b, a) => {
+            if (!window.textCtx) {
+                const tc = document.getElementById("text-overlay");
+                if (tc) {
+                    tc.width = window.innerWidth;
+                    tc.height = window.innerHeight;
+                    window.textCtx = tc.getContext("2d", { alpha: true });
+                    window.textCtxCache = { font: "", fillStyle: "", baseline: "" };
+                }
+            }
+            if (!window.globalTextDecoder) {
+                window.globalTextDecoder = new TextDecoder();
+            }
+            if (!window.textCtxCache) {
+                window.textCtxCache = { font: "", fillStyle: "", baseline: "" };
+            }
+            if (!window.textCtx) return;
+            const wasm = window.__WASI_PROXY.wasm || wasmInstance;
+            const memory = new Uint8Array(wasm.exports.memory.buffer);
+            const text = window.globalTextDecoder.decode(memory.subarray(ptr, ptr + len));
+            
+            const font = `${font_size}px monospace`;
+            if (window.textCtxCache.font !== font) {
+                window.textCtx.font = font;
+                window.textCtxCache.font = font;
+            }
+            
+            const fillStyle = `rgba(${r * 255}, ${g * 255}, ${b * 255}, ${a})`;
+            if (window.textCtxCache.fillStyle !== fillStyle) {
+                window.textCtx.fillStyle = fillStyle;
+                window.textCtxCache.fillStyle = fillStyle;
+            }
+            
+            window.textCtx.textBaseline = 'middle';
+            window.textCtx.textAlign = 'center';
+            window.textCtxCache.baseline = 'middle'; // invalidate cache for normal text
+            
+            window.textCtx.fillText(text, x, y);
+            
+            // Restore alignment
+            window.textCtx.textAlign = 'start';
+        },
         clear_text_js: () => {
             if (!window.textCtx) {
                 const tc = document.getElementById("text-overlay");
@@ -1215,21 +1195,6 @@ async function bootstrap() {
             }
         },
         clear_screen_js: () => window.clear_screen_js(),
-        create_html_overlay_js: (id, x, y, w, h) => window.create_html_overlay_js(id, x, y, w, h),
-        destroy_html_overlay_js: (id) => window.destroy_html_overlay_js(id),
-        update_html_overlay_bounds_js: (id, x, y, w, h, z, is_active) => window.update_html_overlay_bounds_js(id, x, y, w, h, z, is_active),
-        append_html_overlay_text_js: (id, ptr, len) => {
-            const memory = new Uint8Array(wasmInstance.exports.memory.buffer);
-            const str = new TextDecoder().decode(memory.subarray(ptr, ptr + len));
-            window.append_html_overlay_text_js(id, str);
-        },
-        update_html_overlay_input_line_js: (id, p_ptr, p_len, i_ptr, i_len, cursor_pos) => {
-            const memory = new Uint8Array(wasmInstance.exports.memory.buffer);
-            const p_str = new TextDecoder().decode(memory.subarray(p_ptr, p_ptr + p_len));
-            const i_str = new TextDecoder().decode(memory.subarray(i_ptr, i_ptr + i_len));
-            window.update_html_overlay_input_line_js(id, p_str, i_str, cursor_pos);
-        },
-        clear_html_overlay_text_js: (id) => window.clear_html_overlay_text_js(id),
         draw_gui_app_js: (id, x, y, w, h) => {
             const app = window.gui_apps.find(a => a.__window_id === id);
             if (app && app.exports.tick) {
@@ -1276,11 +1241,6 @@ async function bootstrap() {
                 return id;
             }
             return 0;
-        },
-        draw_editor_js: (id, c_ptr, c_len, cursor_pos) => {
-            const memory = new Uint8Array(wasmInstance.exports.memory.buffer);
-            const c_str = new TextDecoder().decode(memory.subarray(c_ptr, c_ptr + c_len));
-            window.draw_editor_js(id, c_str, cursor_pos);
         },
         sys_execve: (args_ptr, args_len, cwd_ptr, cwd_len, stdin_ptr, stdin_len, stdout_ptr, stdout_len, terminal_id) => {
             if (!window.__WASI_PROXY.wasm) return -1;

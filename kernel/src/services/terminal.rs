@@ -264,7 +264,6 @@ impl Process for TerminalProcess {
                             self.cursor_pos = 0;
                             if let Some(_id) = self.window_id {
                                 self.screen_buffer.clear();
-                                needs_flush = true;
                             }
                             self.print(env, "\n");
                             needs_flush = true;
@@ -328,7 +327,6 @@ impl Process for TerminalProcess {
                                     new_pos += 1;
                                 }
                                 self.cursor_pos = new_pos;
-                                needs_flush = true;
                             }
                         }
                         46 => { // Delete
