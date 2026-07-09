@@ -292,13 +292,18 @@ async function bootstrap() {
 
     function saveVfsToDB(db, vfsData) {
         return new Promise((resolve, reject) => {
-            // Strip out non-serializable properties (like WebAssembly.Module) before saving
+            // Strip out non-serializable or very large properties before saving
             const dataToSave = {};
             for (const path in vfsData) {
                 const node = vfsData[path];
                 dataToSave[path] = { ...node };
                 if (dataToSave[path].module) {
                     delete dataToSave[path].module;
+                }
+                // Don't save large preloaded executables to DB, they are fetched on boot
+                if (path.startsWith("/bin/") && dataToSave[path].type === "executable") {
+                    delete dataToSave[path];
+                    continue;
                 }
             }
             const transaction = db.transaction("vfs_store", "readwrite");
@@ -352,7 +357,7 @@ async function bootstrap() {
         let shouldSaveVfs = false;
         
         // Preload binaries
-        const binaries = ['hello.wasm', 'coreutils.wasm', 'sh.wasm', 'edit.wasm', 'calc.wasm'];
+        const binaries = ['hello.wasm', 'coreutils.wasm', 'sh.wasm', 'edit.wasm', 'calc.wasm', 'fileman.wasm'];
         for (const bin of binaries) {
             const resp = await fetch(`/bin/${bin}?t=${Date.now()}`);
             if (resp.ok) {
@@ -371,11 +376,9 @@ async function bootstrap() {
         // create aliases for coreutils commands
         const cmds = ["ls", "cat", "echo", "pwd", "mkdir", "rm", "head", "tail", "wc", "sort", "touch"];
         for (let cmd of cmds) {
-            if (!vfs[`/bin/${cmd}`]) {
-                vfs[`/bin/${cmd}`] = vfs["/bin/coreutils"];
-                if (!vfs["/bin"].children.includes(cmd)) {
-                    vfs["/bin"].children.push(cmd);
-                }
+            vfs[`/bin/${cmd}`] = vfs["/bin/coreutils"];
+            if (!vfs["/bin"].children.includes(cmd)) {
+                vfs["/bin"].children.push(cmd);
             }
         }
         shouldSaveVfs = true;
@@ -1073,8 +1076,44 @@ async function bootstrap() {
                     return 8;
                 };
             }
+            if (prop === 'path_filestat_set_times') {
+                return function(fd, flags, path_ptr, path_len, atim, mtim, fst_flags) {
+                    let basePath = "/";
+                    if (fd !== 3) {
+                        const openFd = window.__WASI_FDS.get(fd);
+                        if (!openFd || openFd.type !== "dir") return 8;
+                        basePath = openFd.path;
+                    }
+                    if (window.__WASI_PROXY.wasm) {
+                        const memory = new Uint8Array(window.__WASI_PROXY.wasm.exports.memory.buffer);
+                        let pathStr = "";
+                        for (let i = 0; i < path_len; i++) {
+                            pathStr += String.fromCharCode(memory[path_ptr + i]);
+                        }
+                        const fullPath = getVfsPath(resolvePath(basePath, pathStr));
+                        const node = vfs[fullPath];
+                        if (!node) return 44; // ENOENT
+                        node.timestamp = Date.now();
+                        saveVfs();
+                        return 0; // SUCCESS
+                    }
+                    return 8;
+                };
+            }
+            if (prop === 'fd_filestat_set_times') {
+                return function(fd, atim, mtim, fst_flags) {
+                    const openFd = window.__WASI_FDS.get(fd);
+                    if (!openFd) return 8;
+                    const node = vfs[openFd.path];
+                    if (node) {
+                        node.timestamp = Date.now();
+                        saveVfs();
+                    }
+                    return 0;
+                };
+            }
             return function(...args) {
-                console.log("UNIMPLEMENTED WASI STUB CALLED: " + prop + " with args: " + JSON.stringify(args));
+                console.log("UNIMPLEMENTED WASI STUB CALLED: " + prop + " with args: " + JSON.stringify(args, (k, v) => typeof v === 'bigint' ? v.toString() + 'n' : v));
                 // Return ENOSYS for unimplemented functions
                 return 52; 
             };
@@ -1212,27 +1251,33 @@ async function bootstrap() {
             if (app && app.exports.handle_mouse_move) {
                 const prev = window.__WASI_PROXY.wasm;
                 window.__WASI_PROXY.wasm = app;
-                app.exports.handle_mouse_move(mx, my);
+                const ret = app.exports.handle_mouse_move(mx, my);
                 window.__WASI_PROXY.wasm = prev;
+                return ret;
             }
+            return 0;
         },
         gui_app_mouse_down_js: (id, mx, my) => {
             const app = window.gui_apps.find(a => a.__window_id === id);
             if (app && app.exports.handle_mouse_down) {
                 const prev = window.__WASI_PROXY.wasm;
                 window.__WASI_PROXY.wasm = app;
-                app.exports.handle_mouse_down(mx, my);
+                const ret = app.exports.handle_mouse_down(mx, my);
                 window.__WASI_PROXY.wasm = prev;
+                return ret;
             }
+            return 0;
         },
         gui_app_mouse_up_js: (id, mx, my) => {
             const app = window.gui_apps.find(a => a.__window_id === id);
             if (app && app.exports.handle_mouse_up) {
                 const prev = window.__WASI_PROXY.wasm;
                 window.__WASI_PROXY.wasm = app;
-                app.exports.handle_mouse_up(mx, my);
+                const ret = app.exports.handle_mouse_up(mx, my);
                 window.__WASI_PROXY.wasm = prev;
+                return ret;
             }
+            return 0;
         },
         sys_create_window: (x, y, w, h, app_type) => {
             console.log("sys_create_window", x, y, w, h, app_type);

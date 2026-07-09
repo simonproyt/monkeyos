@@ -53,21 +53,21 @@ impl Button {
 
 impl Widget for Button {
     fn draw(&self, x: i32, y: i32) {
-        let (r, g, b) = if self.is_pressed {
-            (0.1, 0.5, 0.1) // dark green
+        let (r, g, b, a) = if self.is_pressed {
+            (0.1, 0.1, 0.15, 0.8)
         } else if self.is_hovered {
-            (0.3, 0.8, 0.3) // light green
+            (0.25, 0.25, 0.3, 0.7)
         } else {
-            (0.2, 0.6, 0.2) // normal green
+            (0.15, 0.15, 0.2, 0.5) // Translucent for glassmorphism effect
         };
         
         unsafe {
-            draw_rect_js(x as f32, y as f32, self.w as f32, self.h as f32, r, g, b, 1.0, 4.0, 0.0);
+            draw_rect_js(x as f32, y as f32, self.w as f32, self.h as f32, r, g, b, a, 6.0, 2.0);
             
-            // Draw centered text
-            let text_x = x + (self.w / 2) - (self.text.len() as i32 * 4); // rough approx
-            let text_y = y + (self.h / 2) - 8;
-            draw_text_js(text_x as f32, text_y as f32, self.text.as_ptr(), self.text.len(), 16.0, 1.0, 1.0, 1.0, 1.0);
+            // Draw left-aligned text with padding
+            let text_x = x + 12;
+            let text_y = y + (self.h / 2) - 6;
+            draw_text_js(text_x as f32, text_y as f32, self.text.as_ptr(), self.text.len(), 14.0, 0.9, 0.9, 0.9, 1.0);
         }
     }
 

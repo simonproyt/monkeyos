@@ -259,6 +259,7 @@ pub unsafe extern "C" fn kernel_create_window(kernel: *mut Kernel, x: i32, y: i3
     let title = match app_type {
         0 => "Terminal".to_string(),
         1 => "Calculator".to_string(),
+        2 => "File Manager".to_string(),
         _ => "App".to_string(),
     };
     

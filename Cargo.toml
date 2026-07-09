@@ -3,8 +3,12 @@ members = [
     "kernel",
     "apps/hello",
     "apps/coreutils",
-    "apps/sh"
-, "apps/edit", "apps/libui", "apps/calc"]
+    "apps/sh",
+    "apps/edit",
+    "apps/libui",
+    "apps/calc",
+    "apps/fileman"
+]
 resolver = "2"
 
 [profile.release]

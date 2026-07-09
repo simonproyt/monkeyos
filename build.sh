@@ -27,6 +27,11 @@ cd apps/calc
 cargo build --target wasm32-unknown-unknown --release
 cd ../..
 
+echo "Building fileman executable..."
+cd apps/fileman
+cargo build --target wasm32-wasip1 --release
+cd ../..
+
 mkdir -p public/bin
 cp target/wasm32-unknown-unknown/release/kernel.wasm public/
 cp target/wasm32-wasip1/release/hello.wasm public/bin/
@@ -34,4 +39,5 @@ cp target/wasm32-wasip1/release/coreutils.wasm public/bin/
 cp target/wasm32-wasip1/release/sh.wasm public/bin/
 cp target/wasm32-wasip1/release/edit.wasm public/bin/
 cp target/wasm32-unknown-unknown/release/calc.wasm public/bin/
+cp target/wasm32-wasip1/release/fileman.wasm public/bin/
 echo "Build complete. Run ./serve.sh to start."

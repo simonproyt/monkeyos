@@ -5,9 +5,9 @@ use crate::ipc::MessagePayload;
 
 #[link(wasm_import_module = "env")]
 extern "C" {
-    fn gui_app_mouse_move_js(id: u32, local_x: i32, local_y: i32);
-    fn gui_app_mouse_down_js(id: u32, local_x: i32, local_y: i32);
-    fn gui_app_mouse_up_js(id: u32, local_x: i32, local_y: i32);
+    fn gui_app_mouse_move_js(id: u32, local_x: i32, local_y: i32) -> i32;
+    fn gui_app_mouse_down_js(id: u32, local_x: i32, local_y: i32) -> i32;
+    fn gui_app_mouse_up_js(id: u32, local_x: i32, local_y: i32) -> i32;
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -288,6 +288,23 @@ impl WindowManager {
                 text: "Calculator".to_string(), 
                 font_size: 16.0, r: 0.9, g: 0.9, b: 0.9, a: 1.0 
             });
+
+            // Start Menu: File Manager App entry
+            env.send_msg(self.display_server_pid, MessagePayload::DrawRect { 
+                x: dock_x + 20, y: dock_y - 200, w: 40, h: 40, 
+                r: 0.4, g: 0.4, b: 0.8, a: 1.0,
+                radius: 8.0, shadow_blur: 5.0
+            });
+            env.send_msg(self.display_server_pid, MessagePayload::DrawCenteredText {
+                x: dock_x + 40, y: dock_y - 180,
+                text: "📁".to_string(),
+                font_size: 20.0, r: 1.0, g: 1.0, b: 1.0, a: 1.0
+            });
+            env.send_msg(self.display_server_pid, MessagePayload::DrawText { 
+                x: dock_x + 70, y: dock_y - 190, 
+                text: "File Manager".to_string(), 
+                font_size: 16.0, r: 0.9, g: 0.9, b: 0.9, a: 1.0 
+            });
         }
     }
 }
@@ -337,7 +354,10 @@ impl Process for WindowManager {
                         let ry = self.mouse_y - (active_win.y + title_h);
                         if rx >= 0 && ry >= 0 && rx < active_win.w && ry < (active_win.h - title_h) {
                             if active_win.owner == 0 {
-                                unsafe { gui_app_mouse_move_js(active_win.id, self.mouse_x, self.mouse_y) };
+                                let redraw = unsafe { gui_app_mouse_move_js(active_win.id, self.mouse_x, self.mouse_y) };
+                                if redraw != 0 {
+                                    needs_redraw = true;
+                                }
                             } else {
                                 env.send_msg(active_win.owner, MessagePayload::MouseMove { x: rx, y: ry });
                             }
@@ -430,6 +450,10 @@ impl Process for WindowManager {
                                 // Calculator click
                                 else if self.mouse_y >= dock_y - 250 && self.mouse_y <= dock_y - 210 {
                                     env.spawn_process("/bin/calc");
+                                }
+                                // File Manager click
+                                else if self.mouse_y >= dock_y - 200 && self.mouse_y <= dock_y - 160 {
+                                    env.spawn_process("/bin/fileman");
                                 }
                                 
                                 self.start_menu_open = false;
@@ -564,7 +588,10 @@ impl Process for WindowManager {
                                 let ry = self.mouse_y - (active_win.y + title_h);
                                 if rx >= 0 && ry >= 0 && rx < active_win.w && ry < (active_win.h - title_h) {
                                     if active_win.owner == 0 {
-                                        unsafe { gui_app_mouse_down_js(active_win.id, self.mouse_x, self.mouse_y) };
+                                        let redraw = unsafe { gui_app_mouse_down_js(active_win.id, self.mouse_x, self.mouse_y) };
+                                        if redraw != 0 {
+                                            needs_redraw = true;
+                                        }
                                     } else {
                                         env.send_msg(active_win.owner, MessagePayload::MouseButton { down: true });
                                     }
@@ -584,7 +611,10 @@ impl Process for WindowManager {
                             let ry = self.mouse_y - (active_win.y + title_h);
                             if rx >= 0 && ry >= 0 && rx < active_win.w && ry < (active_win.h - title_h) {
                                 if active_win.owner == 0 {
-                                    unsafe { gui_app_mouse_up_js(active_win.id, self.mouse_x, self.mouse_y) };
+                                    let redraw = unsafe { gui_app_mouse_up_js(active_win.id, self.mouse_x, self.mouse_y) };
+                                    if redraw != 0 {
+                                        needs_redraw = true;
+                                    }
                                 } else {
                                     env.send_msg(active_win.owner, MessagePayload::MouseButton { down: false });
                                 }
