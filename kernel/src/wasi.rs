@@ -35,10 +35,15 @@ extern "C" {
     fn wasi_print_js(id: u32, ptr: *const u8, len: usize);
     fn sys_execve(args_ptr: *const u8, args_len: usize, cwd_ptr: *const u8, cwd_len: usize, stdin_ptr: *const u8, stdin_len: usize, stdout_ptr: *const u8, stdout_len: usize, terminal_id: u32) -> i32;
     fn sys_time_ms() -> u64;
+    fn sys_timezone_offset_ms() -> i64;
 }
 
 pub fn call_sys_time_ms() -> u64 {
     unsafe { sys_time_ms() }
+}
+
+pub fn call_sys_timezone_offset_ms() -> i64 {
+    unsafe { sys_timezone_offset_ms() }
 }
 
 pub fn call_sys_execve(args_buf: &[u8], cwd: &str, stdin: Option<&str>, stdout: Option<&str>, terminal_id: u32) -> i32 {

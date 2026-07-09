@@ -1,6 +1,6 @@
 #[link(wasm_import_module = "env")]
 extern "C" {
-    fn sys_create_window(x: i32, y: i32, w: i32, h: i32) -> u32;
+    fn sys_create_window(x: i32, y: i32, w: i32, h: i32, app_type: u32) -> u32;
 }
 
 pub struct Window {
@@ -12,8 +12,13 @@ pub struct Window {
 }
 
 impl Window {
-    pub fn new(_title: &str, x: i32, y: i32, w: i32, h: i32) -> Self {
-        let id = unsafe { sys_create_window(x, y, w, h) };
+    pub fn new(title: &str, x: i32, y: i32, w: i32, h: i32) -> Self {
+        let app_type = match title {
+            "Terminal" => 0,
+            "Calculator" => 1,
+            _ => 2,
+        };
+        let id = unsafe { sys_create_window(x, y, w, h, app_type) };
         Self {
             id, x, y, w, h,
         }

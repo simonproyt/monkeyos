@@ -1092,6 +1092,9 @@ async function bootstrap() {
         sys_time_ms: () => {
             return BigInt(Date.now());
         },
+        sys_timezone_offset_ms: () => {
+            return BigInt(new Date().getTimezoneOffset() * 60 * 1000);
+        },
         wasi_print_js: (id, ptr, len) => {
             const wasm = window.__WASI_PROXY.wasm || wasmInstance;
             const memory = new Uint8Array(wasm.exports.memory.buffer);
@@ -1231,10 +1234,10 @@ async function bootstrap() {
                 window.__WASI_PROXY.wasm = prev;
             }
         },
-        sys_create_window: (x, y, w, h) => {
-            console.log("sys_create_window", x, y, w, h);
+        sys_create_window: (x, y, w, h, app_type) => {
+            console.log("sys_create_window", x, y, w, h, app_type);
             if (wasmInstance && wasmInstance.exports.kernel_create_window && window.__WASI_PROXY.kernelPtr) {
-                const id = wasmInstance.exports.kernel_create_window(window.__WASI_PROXY.kernelPtr, x, y, w, h, 0);
+                const id = wasmInstance.exports.kernel_create_window(window.__WASI_PROXY.kernelPtr, x, y, w, h, app_type);
                 if (window.__WASI_PROXY.wasm) {
                     window.__WASI_PROXY.wasm.__window_id = id;
                 }

@@ -254,9 +254,13 @@ pub extern "C" fn sys_fd_read(_fd: u32, _iovs_ptr: u32, _iovs_len: u32, _nread_p
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn kernel_create_window(kernel: *mut Kernel, x: i32, y: i32, w: i32, h: i32, has_overlay: u32) -> u32 {
+pub unsafe extern "C" fn kernel_create_window(kernel: *mut Kernel, x: i32, y: i32, w: i32, h: i32, app_type: u32) -> u32 {
     let k = unsafe { &mut *kernel };
-    let title = "App".to_string();
+    let title = match app_type {
+        0 => "Terminal".to_string(),
+        1 => "Calculator".to_string(),
+        _ => "App".to_string(),
+    };
     
     if let Some(wm_pid) = k.registry.lookup("wm") {
         // Simple sequential ID, offset to avoid clashes with kernel windows
@@ -267,7 +271,7 @@ pub unsafe extern "C" fn kernel_create_window(kernel: *mut Kernel, x: i32, y: i3
             sender: 0,
             receiver: wm_pid,
             payload: crate::ipc::MessagePayload::CreateWindow {
-                id, x, y, w, h, title, owner: has_overlay as usize
+                id, x, y, w, h, title, owner: 0
             }
         });
         id

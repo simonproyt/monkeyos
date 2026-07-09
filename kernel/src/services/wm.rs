@@ -601,8 +601,10 @@ impl Process for WindowManager {
             }
         }
 
-        let ms = crate::wasi::call_sys_time_ms();
-        let s = ms / 1000;
+        let utc_ms = crate::wasi::call_sys_time_ms();
+        let tz_offset_ms = crate::wasi::call_sys_timezone_offset_ms();
+        let local_ms = (utc_ms as i64 - tz_offset_ms) as u64;
+        let s = local_ms / 1000;
         let m = (s / 60) % 60;
         let h = (s / 3600) % 24;
         let time_str = format!("{:02}:{:02}", h, m);
