@@ -57,6 +57,7 @@ pub struct WindowManager {
     last_click_time: u64,
     last_time_str: String,
     last_half_second: u64,
+    mouse_is_down: bool,
 }
 
 impl WindowManager {
@@ -79,6 +80,7 @@ impl WindowManager {
             last_click_time: 0,
             last_time_str: String::new(),
             last_half_second: 0,
+            mouse_is_down: false,
         }
     }
 
@@ -383,7 +385,8 @@ impl Process for WindowManager {
                     if let Some(active_win) = self.windows.last() {
                         let rx = self.mouse_x - active_win.x;
                         let ry = self.mouse_y - (active_win.y + title_h);
-                        if rx >= 0 && ry >= 0 && rx < active_win.w && ry < (active_win.h - title_h) {
+                        // Forward if mouse is currently down (capture), or if it's within bounds
+                        if self.mouse_is_down || (rx >= 0 && ry >= 0 && rx < active_win.w && ry < (active_win.h - title_h)) {
                             if active_win.owner == 0 {
                                 let redraw = unsafe { gui_app_mouse_move_js(active_win.id, self.mouse_x, self.mouse_y) };
                                 if redraw != 0 {
@@ -451,6 +454,8 @@ impl Process for WindowManager {
                     }
                 }
                 MessagePayload::MouseButton { down } => {
+                    self.mouse_is_down = down;
+                    let mut needs_redraw = false;
                     if down {
                         let title_h = 30;
                         let mut clicked_idx = None;
@@ -642,20 +647,17 @@ impl Process for WindowManager {
                         self.resize_window_index = None;
                         self.resize_edge = ResizeEdge::None;
                         
-                        // Forward mouse up to active window
+                        // Forward mouse up to active window (always forward, not just in-bounds,
+                        // because the app may be in a drag state that needs to be released)
                         let title_h = 30;
                         if let Some(active_win) = self.windows.last() {
-                            let rx = self.mouse_x - active_win.x;
-                            let ry = self.mouse_y - (active_win.y + title_h);
-                            if rx >= 0 && ry >= 0 && rx < active_win.w && ry < (active_win.h - title_h) {
-                                if active_win.owner == 0 {
-                                    let redraw = unsafe { gui_app_mouse_up_js(active_win.id, self.mouse_x, self.mouse_y) };
-                                    if redraw != 0 {
-                                        needs_redraw = true;
-                                    }
-                                } else {
-                                    env.send_msg(active_win.owner, MessagePayload::MouseButton { down: false });
+                            if active_win.owner == 0 {
+                                let redraw = unsafe { gui_app_mouse_up_js(active_win.id, self.mouse_x, self.mouse_y) };
+                                if redraw != 0 {
+                                    needs_redraw = true;
                                 }
+                            } else {
+                                env.send_msg(active_win.owner, MessagePayload::MouseButton { down: false });
                             }
                         }
                     }

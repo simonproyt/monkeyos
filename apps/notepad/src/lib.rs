@@ -22,6 +22,9 @@ struct Notepad {
     last_typing_time: u128,
     scroll_x: f32,
     scroll_y: f32,
+    is_dragging_v_scroll: bool,
+    is_dragging_h_scroll: bool,
+    needs_autoscroll: bool,
 }
 
 static mut NOTEPAD: Option<Notepad> = None;
@@ -52,6 +55,9 @@ pub extern "C" fn init() {
         last_typing_time: 0,
         scroll_x: 0.0,
         scroll_y: 0.0,
+        is_dragging_v_scroll: false,
+        is_dragging_h_scroll: false,
+        needs_autoscroll: false,
     };
 
     unsafe {
@@ -83,8 +89,8 @@ pub extern "C" fn tick(x: i32, y: i32, w: i32, h: i32) {
 
     app.tick_count = app.tick_count.wrapping_add(1);
 
-    // Auto-scroll to keep cursor visible
-    if app.cursor_row < app.text.len() {
+    // Auto-scroll to keep cursor visible (only when cursor is moved via typing)
+    if app.needs_autoscroll && !app.is_dragging_v_scroll && !app.is_dragging_h_scroll && app.cursor_row < app.text.len() {
         let text_width = if app.cursor_col > 0 && app.cursor_col <= app.text[app.cursor_row].len() {
             unsafe { libui::measure_text_js(app.text[app.cursor_row].as_ptr(), app.cursor_col, 16.0) }
         } else {
@@ -99,7 +105,18 @@ pub extern "C" fn tick(x: i32, y: i32, w: i32, h: i32) {
         let target_y = cursor_y - (h as f32 - 90.0);
         if target_y > app.scroll_y { app.scroll_y = target_y; }
         if cursor_y < app.scroll_y { app.scroll_y = cursor_y; }
+        app.needs_autoscroll = false;
     }
+
+    // Clamp scroll values to valid boundaries
+    let view_h = h as f32 - 90.0;
+    let total_h = (app.text.len() as f32) * 20.0 + 20.0;
+    app.scroll_y = app.scroll_y.clamp(0.0, (total_h - view_h).max(0.0));
+
+    let view_w = w as f32 - 30.0;
+    let longest_line_len = app.text.iter().map(|l| l.len()).max().unwrap_or(0);
+    let total_w = longest_line_len as f32 * 9.6 + 20.0;
+    app.scroll_x = app.scroll_x.clamp(0.0, (total_w - view_w).max(0.0));
 
     // Draw text
     unsafe {
@@ -155,19 +172,15 @@ pub extern "C" fn tick(x: i32, y: i32, w: i32, h: i32) {
     let total_h = (app.text.len() as f32) * 20.0 + 20.0;
     if total_h > view_h {
         let sb_h = ((view_h / total_h) * view_h).max(20.0);
-        let sb_y = (content_y + 50) as f32 + (app.scroll_y / (total_h - view_h).max(1.0)) * (view_h - sb_h);
+        let sb_y = (content_y + 40) as f32 + (app.scroll_y / (total_h - view_h).max(1.0)) * (view_h - sb_h);
         unsafe {
             libui::draw_rect_js(x as f32 + w as f32 - 12.0, sb_y, 8.0, sb_h, 0.4, 0.4, 0.45, 0.8, 4.0, 0.0);
         }
     }
 
     let view_w = w as f32 - 30.0;
-    let longest_line = app.text.iter().max_by_key(|l| l.len()).unwrap_or(&String::new()).clone();
-    let total_w = if longest_line.len() > 0 {
-        (unsafe { libui::measure_text_js(longest_line.as_ptr(), longest_line.len(), 16.0) }) + 20.0
-    } else {
-        0.0
-    };
+    let longest_line_len = app.text.iter().map(|l| l.len()).max().unwrap_or(0);
+    let total_w = longest_line_len as f32 * 9.6 + 20.0; // Approximation is fine for scrollbar scale, avoids WASM IPC lag
     if total_w > view_w {
         let sb_w = ((view_w / total_w) * view_w).max(20.0);
         let sb_x = x as f32 + 10.0 + (app.scroll_x / (total_w - view_w).max(1.0)) * (view_w - sb_w);
@@ -229,7 +242,30 @@ pub extern "C" fn handle_mouse_move(mx: i32, my: i32) -> i32 {
         return if app.picker.handle_mouse_move(mx, my, app.win.x + 70, content_y + 50) { 1 } else { 0 };
     }
     
+    
     let mut redraw = false;
+    
+    if app.is_dragging_v_scroll {
+        let view_h = app.win.h as f32 - 90.0;
+        let total_h = (app.text.len() as f32) * 20.0 + 20.0;
+        let sb_h = ((view_h / total_h) * view_h).max(20.0);
+        let thumb_y = my as f32 - (content_y as f32 + 40.0) - sb_h / 2.0;
+        app.scroll_y = (thumb_y / (view_h - sb_h).max(1.0)) * (total_h - view_h);
+        app.scroll_y = app.scroll_y.clamp(0.0, (total_h - view_h).max(0.0));
+        redraw = true;
+    }
+    
+    if app.is_dragging_h_scroll {
+        let view_w = app.win.w as f32 - 30.0;
+        let longest_line_len = app.text.iter().map(|l| l.len()).max().unwrap_or(0);
+        let total_w = longest_line_len as f32 * 9.6 + 20.0;
+        let sb_w = ((view_w / total_w) * view_w).max(20.0);
+        let thumb_x = mx as f32 - (app.win.x as f32 + 10.0) - sb_w / 2.0;
+        app.scroll_x = (thumb_x / (view_w - sb_w).max(1.0)) * (total_w - view_w);
+        app.scroll_x = app.scroll_x.clamp(0.0, (total_w - view_w).max(0.0));
+        redraw = true;
+    }
+    
     redraw |= app.btn_open.handle_mouse_move(mx, my, app.win.x + 10, content_y + 8);
     redraw |= app.btn_save.handle_mouse_move(mx, my, app.win.x + 100, content_y + 8);
     redraw |= app.btn_save_as.handle_mouse_move(mx, my, app.win.x + 190, content_y + 8);
@@ -245,6 +281,32 @@ pub extern "C" fn handle_mouse_down(mx: i32, my: i32) -> i32 {
     }
     
     let mut redraw = false;
+    
+    let view_h = app.win.h as f32 - 90.0;
+    let total_h = (app.text.len() as f32) * 20.0 + 20.0;
+    if total_h > view_h {
+        let sb_x = app.win.x as f32 + app.win.w as f32 - 24.0;
+        let sb_y = content_y as f32 + 40.0;
+        if (mx as f32) >= sb_x && (mx as f32) <= sb_x + 24.0 && 
+           (my as f32) >= sb_y && (my as f32) <= sb_y + view_h {
+            app.is_dragging_v_scroll = true;
+            return handle_mouse_move(mx, my);
+        }
+    }
+    
+    let view_w = app.win.w as f32 - 30.0;
+    let longest_line_len = app.text.iter().map(|l| l.len()).max().unwrap_or(0);
+    let total_w = longest_line_len as f32 * 9.6 + 20.0;
+    if total_w > view_w {
+        let sb_x = app.win.x as f32 + 10.0;
+        let sb_y = app.win.y as f32 + app.win.h as f32 - 24.0;
+        if (mx as f32) >= sb_x && (mx as f32) <= sb_x + view_w &&
+           (my as f32) >= sb_y && (my as f32) <= sb_y + 24.0 {
+            app.is_dragging_h_scroll = true;
+            return handle_mouse_move(mx, my);
+        }
+    }
+    
     redraw |= app.btn_open.handle_mouse_down(mx, my, app.win.x + 10, content_y + 8);
     redraw |= app.btn_save.handle_mouse_down(mx, my, app.win.x + 100, content_y + 8);
     redraw |= app.btn_save_as.handle_mouse_down(mx, my, app.win.x + 190, content_y + 8);
@@ -254,6 +316,8 @@ pub extern "C" fn handle_mouse_down(mx: i32, my: i32) -> i32 {
 #[no_mangle]
 pub extern "C" fn handle_mouse_up(mx: i32, my: i32) -> i32 {
     let app = unsafe { NOTEPAD.as_mut().unwrap() };
+    app.is_dragging_v_scroll = false;
+    app.is_dragging_h_scroll = false;
     let content_y = app.win.y + 25;
     
     if app.picker.is_open {
@@ -445,6 +509,7 @@ pub extern "C" fn handle_key_down(key_code: u32) -> i32 {
         _ => return 0,
     }
     
+    app.needs_autoscroll = true;
     app.lbl_status.text = "Edited".to_string();
     1
 }
