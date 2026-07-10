@@ -98,10 +98,10 @@ pub extern "C" fn tick(x: i32, y: i32, w: i32, h: i32) {
             .unwrap_or_default()
             .as_millis();
             
-        if i == app.cursor_row && ((time_ms % 1000) < 500 || time_ms.saturating_sub(app.last_typing_time) < 500) {
+        if !app.is_saving_as && i == app.cursor_row && ((time_ms % 1000) < 500 || time_ms.saturating_sub(app.last_typing_time) < 500) {
             let cx = x as f32 + 10.0 + (app.cursor_col as f32 * 8.4); // 8.4px char width for 14px monospace
             unsafe {
-                libui::draw_rect_js(cx, text_y as f32 - 14.0, 2.0, 16.0, 1.0, 1.0, 1.0, 0.8, 0.0, 0.0);
+                libui::draw_rect_js(cx, text_y as f32, 2.0, 14.0, 1.0, 1.0, 1.0, 0.8, 0.0, 0.0);
             }
         }
         
@@ -115,21 +115,34 @@ pub extern "C" fn tick(x: i32, y: i32, w: i32, h: i32) {
     
     // Draw Save As modal if open
     if app.is_saving_as {
+        app.picker.is_open = true; // Ensure picker is open
+        
+        // If they click a file, populate the name and keep picker open
+        if let Some(path) = app.picker.selected_path.take() {
+            if let Some(name) = path.split('/').last() {
+                app.save_as_filename = name.to_string();
+            }
+        }
+        
+        // Draw the Save As input box attached to the bottom of the FilePicker
         let mx = x + 70;
-        let my = content_y + 50;
+        let my = content_y + 50 + 260; // Just below the picker
         unsafe {
-            libui::draw_rect_js(mx as f32, my as f32, 250.0, 80.0, 0.15, 0.15, 0.18, 0.95, 8.0, 10.0);
-            libui::draw_text_js(mx as f32 + 10.0, my as f32 + 20.0, "Save As:".as_ptr(), 8, 14.0, 1.0, 1.0, 1.0, 1.0);
+            libui::draw_rect_js(mx as f32, my as f32, 360.0, 60.0, 0.15, 0.15, 0.18, 0.95, 0.0, 10.0);
+            libui::draw_text_js(mx as f32 + 10.0, my as f32 + 10.0, "Save As:".as_ptr(), 8, 14.0, 1.0, 1.0, 1.0, 1.0);
             
             // Draw text box
-            libui::draw_rect_js(mx as f32 + 10.0, my as f32 + 35.0, 230.0, 25.0, 0.1, 0.1, 0.12, 1.0, 4.0, 0.0);
-            libui::draw_text_js(mx as f32 + 15.0, my as f32 + 52.0, app.save_as_filename.as_ptr(), app.save_as_filename.len(), 14.0, 1.0, 1.0, 1.0, 1.0);
+            libui::draw_rect_js(mx as f32 + 80.0, my as f32 + 5.0, 270.0, 25.0, 0.1, 0.1, 0.12, 1.0, 4.0, 0.0);
+            libui::draw_text_js(mx as f32 + 85.0, my as f32 + 10.0, app.save_as_filename.as_ptr(), app.save_as_filename.len(), 14.0, 1.0, 1.0, 1.0, 1.0);
+            
+            // Draw hints
+            libui::draw_text_js(mx as f32 + 10.0, my as f32 + 40.0, "(Press Enter to save to current folder)".as_ptr(), 39, 12.0, 0.6, 0.6, 0.6, 1.0);
             
             // Cursor for the text box
             let time_ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis();
             if (time_ms % 1000) < 500 || time_ms.saturating_sub(app.last_typing_time) < 500 {
-                let cx = mx as f32 + 15.0 + (app.save_as_filename.len() as f32 * 8.4);
-                libui::draw_rect_js(cx, my as f32 + 40.0, 2.0, 14.0, 1.0, 1.0, 1.0, 0.8, 0.0, 0.0);
+                let cx = mx as f32 + 85.0 + (app.save_as_filename.len() as f32 * 8.4);
+                libui::draw_rect_js(cx, my as f32 + 10.0, 2.0, 14.0, 1.0, 1.0, 1.0, 0.8, 0.0, 0.0);
             }
         }
     }
@@ -171,22 +184,37 @@ pub extern "C" fn handle_mouse_up(mx: i32, my: i32) -> i32 {
     let content_y = app.win.y + 25;
     
     if app.picker.is_open {
-        let redraw = app.picker.handle_mouse_up(mx, my, app.win.x + 70, content_y + 50);
-        if !app.picker.is_open {
-            if let Some(path) = app.picker.selected_path.take() {
-                app.current_file = Some(path.clone());
-                if let Ok(contents) = fs::read_to_string(&path) {
-                    app.text = contents.lines().map(|s| s.to_string()).collect();
-                    if app.text.is_empty() {
-                        app.text.push(String::new());
+        let mut redraw = app.picker.handle_mouse_up(mx, my, app.win.x + 70, content_y + 50);
+        
+        if app.is_saving_as {
+            if !app.picker.is_open {
+                // If picker closed during Save As, they clicked a file. Grab its name.
+                if let Some(path) = app.picker.selected_path.take() {
+                    if let Some(name) = path.split('/').last() {
+                        app.save_as_filename = name.to_string();
                     }
-                    app.lbl_status.text = format!("Opened {}", path);
-                } else {
-                    app.lbl_status.text = format!("Error opening {}", path);
+                }
+                app.picker.is_open = true; // reopen
+                redraw = true;
+            }
+            return if redraw { 1 } else { 0 };
+        } else {
+            if !app.picker.is_open {
+                if let Some(path) = app.picker.selected_path.take() {
+                    app.current_file = Some(path.clone());
+                    if let Ok(contents) = fs::read_to_string(&path) {
+                        app.text = contents.lines().map(|s| s.to_string()).collect();
+                        if app.text.is_empty() {
+                            app.text.push(String::new());
+                        }
+                        app.lbl_status.text = format!("Opened {}", path);
+                    } else {
+                        app.lbl_status.text = format!("Error opening {}", path);
+                    }
                 }
             }
+            return if redraw { 1 } else { 0 };
         }
-        return if redraw { 1 } else { 0 };
     }
     
     let mut redraw = false;
@@ -220,6 +248,7 @@ pub extern "C" fn handle_mouse_up(mx: i32, my: i32) -> i32 {
     
     if app.btn_save_as.is_pressed && mx >= bx_save_as && mx <= bx_save_as + app.btn_save_as.w && my >= by_save_as && my <= by_save_as + app.btn_save_as.h {
         app.is_saving_as = true;
+        app.picker.open();
         app.save_as_filename.clear();
         app.btn_save_as.is_pressed = false;
         redraw = true;
@@ -232,7 +261,7 @@ pub extern "C" fn handle_mouse_up(mx: i32, my: i32) -> i32 {
 #[no_mangle]
 pub extern "C" fn handle_key_down(key_code: u32) -> i32 {
     let app = unsafe { NOTEPAD.as_mut().unwrap() };
-    if app.picker.is_open { return 0; }
+    if app.picker.is_open && !app.is_saving_as { return 0; }
 
     app.last_typing_time = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis();
     
@@ -240,10 +269,10 @@ pub extern "C" fn handle_key_down(key_code: u32) -> i32 {
         match key_code {
             13 => { // Enter
                 if !app.save_as_filename.is_empty() {
-                    let full_path = if app.save_as_filename.starts_with('/') {
-                        app.save_as_filename.clone()
-                    } else {
+                    let full_path = if app.picker.path == "/" {
                         format!("/{}", app.save_as_filename)
+                    } else {
+                        format!("{}/{}", app.picker.path, app.save_as_filename)
                     };
                     let content = app.text.join("\n");
                     let _ = fs::write(&full_path, content);
@@ -251,12 +280,14 @@ pub extern "C" fn handle_key_down(key_code: u32) -> i32 {
                     app.lbl_status.text = format!("Saved: {}", full_path);
                 }
                 app.is_saving_as = false;
+                app.picker.close();
             }
             8 => { // Backspace
                 app.save_as_filename.pop();
             }
-            17 => { // Ctrl+Q / Escape hack
+            17 | 27 => { // Ctrl+Q / Escape hack
                 app.is_saving_as = false;
+                app.picker.close();
             }
             c if c >= 32 && c <= 126 => {
                 app.save_as_filename.push(c as u8 as char);
