@@ -7,7 +7,8 @@ members = [
     "apps/edit",
     "apps/libui",
     "apps/calc",
-    "apps/fileman"
+    "apps/fileman",
+    "apps/notepad"
 ]
 resolver = "2"
 

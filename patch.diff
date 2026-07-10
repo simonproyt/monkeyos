@@ -1,0 +1,156 @@
+--- a/src/main.js
++++ b/src/main.js
+@@ -189,6 +189,17 @@
+ 
++    const offscreenCanvas = document.createElement("canvas");
++    const measureCtx = offscreenCanvas.getContext("2d");
++
++    window.measure_text_js = function(ptr, len, size) {
++        if (!window.__WASI_PROXY.wasm) return 0;
++        const memory = new Uint8Array(window.__WASI_PROXY.wasm.exports.memory.buffer);
++        const str = new TextDecoder().decode(memory.subarray(ptr, ptr + len));
++        measureCtx.font = `${size}px monospace`;
++        return measureCtx.measureText(str).width;
++    };
++
+     window.clear_screen_js = function() {
+         rectCount = 0;
++        window.gpuDirty = true;
+     };
+ 
+@@ -268,12 +279,15 @@
+     // IndexedDB wrapper functions
+     function initIndexedDB() {
+         return new Promise((resolve, reject) => {
+-            const request = indexedDB.open("MonkeyOS_DB", 1);
++            const request = indexedDB.open("MonkeyOS_DB", 2);
+             request.onupgradeneeded = (event) => {
+                 const db = event.target.result;
+                 if (!db.objectStoreNames.contains("vfs_store")) {
+                     db.createObjectStore("vfs_store");
+                 }
++                if (!db.objectStoreNames.contains("binaries_store")) {
++                    db.createObjectStore("binaries_store");
++                }
+             };
+             request.onsuccess = (event) => resolve(event.target.result);
+             request.onerror = (event) => reject(event.target.error);
+@@ -357,19 +371,64 @@
+         let shouldSaveVfs = false;
+         
+         // Preload binaries
+-        const binaries = ['hello.wasm', 'coreutils.wasm', 'sh.wasm', 'edit.wasm', 'calc.wasm', 'fileman.wasm'];
++        const binaries = ['hello.wasm', 'coreutils.wasm', 'sh.wasm', 'edit.wasm', 'calc.wasm', 'fileman.wasm', 'notepad.wasm'];
++        
++        function getBinaryFromDB(db, name) {
++            return new Promise((resolve) => {
++                try {
++                    const tx = db.transaction("binaries_store", "readonly");
++                    const store = tx.objectStore("binaries_store");
++                    const req = store.get(name);
++                    req.onsuccess = () => resolve(req.result);
++                    req.onerror = () => resolve(null);
++                } catch(e) { resolve(null); }
++            });
++        }
++        
++        function saveBinaryToDB(db, name, buffer, lastModified) {
++            return new Promise((resolve) => {
++                try {
++                    const tx = db.transaction("binaries_store", "readwrite");
++                    const store = tx.objectStore("binaries_store");
++                    store.put({ buffer, lastModified }, name);
++                    tx.oncomplete = () => resolve();
++                } catch(e) { resolve(); }
++            });
++        }
++
+         for (const bin of binaries) {
+-            const resp = await fetch(`/bin/${bin}?t=${Date.now()}`);
+-            if (resp.ok) {
+-                const buffer = await resp.arrayBuffer();
+-                vfs['/bin/' + bin.split('.')[0]] = {
+-                    type: "executable",
+-                    binary: buffer,
+-                    timestamp: Date.now()
+-                };
+-                if (!vfs["/bin"].children.includes(bin.split('.')[0])) {
+-                    vfs["/bin"].children.push(bin.split('.')[0]);
++            try {
++                let cached = db ? await getBinaryFromDB(db, bin) : null;
++                let buffer = null;
++                
++                // Do a HEAD request to check Last-Modified
++                const headResp = await fetch(`/bin/${bin}?t=${Date.now()}`, { method: 'HEAD' });
++                const lastModified = headResp.headers.get("Last-Modified");
++                
++                if (cached && cached.lastModified === lastModified && cached.buffer) {
++                    buffer = cached.buffer;
++                } else {
++                    const resp = await fetch(`/bin/${bin}?t=${Date.now()}`);
++                    if (resp.ok) {
++                        buffer = await resp.arrayBuffer();
++                        if (db) {
++                            await saveBinaryToDB(db, bin, buffer, lastModified);
++                        }
++                    }
+                 }
++                
++                if (buffer) {
++                    vfs['/bin/' + bin.split('.')[0]] = {
++                        type: "executable",
++                        binary: buffer,
++                        timestamp: Date.now()
++                    };
++                    if (!vfs["/bin"].children.includes(bin.split('.')[0])) {
++                        vfs["/bin"].children.push(bin.split('.')[0]);
++                    }
++                }
++            } catch (e) {
++                console.error(`Failed to load ${bin}`, e);
+             }
+         }
+         
+@@ -1279,8 +1338,18 @@
+             }
+             return 0;
+         },
++        gui_app_key_down_js: (id, key_code) => {
++            const app = window.gui_apps.find(a => a.__window_id === id);
++            if (app && app.exports.handle_key_down) {
++                const prev = window.__WASI_PROXY.wasm;
++                window.__WASI_PROXY.wasm = app;
++                const ret = app.exports.handle_key_down(key_code);
++                window.__WASI_PROXY.wasm = prev;
++                return ret;
++            }
++            return 0;
++        },
+         sys_create_window: (x, y, w, h, app_type) => {
+-            console.log("sys_create_window", x, y, w, h, app_type);
+             if (wasmInstance && wasmInstance.exports.kernel_create_window && window.__WASI_PROXY.kernelPtr) {
+                 const id = wasmInstance.exports.kernel_create_window(window.__WASI_PROXY.kernelPtr, x, y, w, h, app_type);
+                 if (window.__WASI_PROXY.wasm) {
+@@ -1423,7 +1492,6 @@
+                     if (childInstance.exports.tick) {
+                         if (childInstance.exports.init) childInstance.exports.init();
+                         window.gui_apps.push(childInstance);
+-                        console.log("Registered GUI App!");
+                     } else if (childInstance.exports._start) {
+                         childInstance.exports._start();
+                     }
+@@ -1441,9 +1509,13 @@
+         return;
+     }
+ 
++    window.gpuDirty = true;
+     function loop() {
+         kernel.tick();
+-        gpuContext.renderWebGPU();
++        if (window.gpuDirty) {
++            gpuContext.renderWebGPU();
++            window.gpuDirty = false;
++        }
+         requestAnimationFrame(loop);
+     }
+     requestAnimationFrame(loop);

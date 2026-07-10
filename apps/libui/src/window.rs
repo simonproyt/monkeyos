@@ -16,7 +16,9 @@ impl Window {
         let app_type = match title {
             "Terminal" => 0,
             "Calculator" => 1,
-            _ => 2,
+            "File Manager" => 2,
+            "Notepad" => 3,
+            _ => 4,
         };
         let id = unsafe { sys_create_window(x, y, w, h, app_type) };
         Self {

@@ -1,5 +1,6 @@
 
 pub mod window;
+pub mod picker;
 
 #[link(wasm_import_module = "env")]
 extern "C" {

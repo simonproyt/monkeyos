@@ -17,8 +17,7 @@ impl Process for VfsService {
 
     fn tick(&mut self, env: &mut SyscallEnv) -> bool {
         while let Some(_msg) = env.recv_msg() {
-            // we dropped sender info for simplicity but let's assume we log it
-            crate::log("[VFS] Received request");
+            // we dropped sender info for simplicity
         }
         true
     }

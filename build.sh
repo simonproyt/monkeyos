@@ -22,13 +22,18 @@ cd apps/edit
 cargo build --target wasm32-wasip1 --release
 cd ../..
 
-echo "Building calc executable..."
+echo "Building GUI Apps..."
 cd apps/calc
-cargo build --target wasm32-unknown-unknown --release
+cargo build --target wasm32-wasip1 --release
 cd ../..
 
-echo "Building fileman executable..."
+echo "Building File Manager..."
 cd apps/fileman
+cargo build --target wasm32-wasip1 --release
+cd ../..
+
+echo "Building Notepad..."
+cd apps/notepad
 cargo build --target wasm32-wasip1 --release
 cd ../..
 
@@ -38,6 +43,7 @@ cp target/wasm32-wasip1/release/hello.wasm public/bin/
 cp target/wasm32-wasip1/release/coreutils.wasm public/bin/
 cp target/wasm32-wasip1/release/sh.wasm public/bin/
 cp target/wasm32-wasip1/release/edit.wasm public/bin/
-cp target/wasm32-unknown-unknown/release/calc.wasm public/bin/
+cp target/wasm32-wasip1/release/calc.wasm public/bin/
 cp target/wasm32-wasip1/release/fileman.wasm public/bin/
+cp target/wasm32-wasip1/release/notepad.wasm public/bin/
 echo "Build complete. Run ./serve.sh to start."

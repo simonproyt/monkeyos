@@ -260,6 +260,7 @@ pub unsafe extern "C" fn kernel_create_window(kernel: *mut Kernel, x: i32, y: i3
         0 => "Terminal".to_string(),
         1 => "Calculator".to_string(),
         2 => "File Manager".to_string(),
+        3 => "Notepad".to_string(),
         _ => "App".to_string(),
     };
     

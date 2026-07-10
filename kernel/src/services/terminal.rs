@@ -14,6 +14,8 @@ pub struct TerminalProcess {
     edit_state: Option<String>,
     history: Vec<String>,
     history_index: usize,
+    tick_count: u32,
+    last_typing_tick: u32,
 }
 
 impl TerminalProcess {
@@ -30,6 +32,8 @@ impl TerminalProcess {
             edit_state: None,
             history: Vec::new(),
             history_index: 0,
+            tick_count: 0,
+            last_typing_tick: 0,
         }
     }
 
@@ -71,6 +75,7 @@ impl TerminalProcess {
                     let mut col = 0;
                     let mut row = 0;
                     let mut current_pos = 0;
+                    let show_cursor = (self.tick_count / 30) % 2 == 0 || self.tick_count.saturating_sub(self.last_typing_tick) < 30;
                     for (_i, c) in edit_content.chars().enumerate() {
                         if current_pos == self.cursor_pos { break; }
                         if c == '\n' {
@@ -81,7 +86,7 @@ impl TerminalProcess {
                         }
                         current_pos += 1;
                     }
-                    if row < editor_lines.len() {
+                    if row < editor_lines.len() && show_cursor {
                         let line = &mut editor_lines[row];
                         if col <= line.len() {
                             line.insert(col, '█');
@@ -93,13 +98,14 @@ impl TerminalProcess {
                 } else {
                     // Normal mode: append the input buffer with prompt and cursor
                     let mut current_line = format!("{}", self.prompt);
+                    let show_cursor = (self.tick_count / 30) % 2 == 0 || self.tick_count.saturating_sub(self.last_typing_tick) < 30;
                     for (i, c) in self.input_buffer.chars().enumerate() {
-                        if i == self.cursor_pos {
+                        if i == self.cursor_pos && show_cursor {
                             current_line.push('█');
                         }
                         current_line.push(c);
                     }
-                    if self.cursor_pos == self.input_buffer.len() {
+                    if self.cursor_pos == self.input_buffer.len() && show_cursor {
                         current_line.push('█');
                     }
                     if let Some(last) = lines.last_mut() {
@@ -235,6 +241,11 @@ impl Process for TerminalProcess {
     fn tick(&mut self, env: &mut SyscallEnv) -> bool {
         let mut needs_flush = false;
         
+        self.tick_count += 1;
+        if self.tick_count % 30 == 0 {
+            needs_flush = true;
+        }
+        
         if !self.launched {
             if let Some(handle) = crate::api::window::create_window(env, 100, 100, 600, 400, "Terminal") {
                 self.window_id = Some(handle.id);
@@ -249,6 +260,7 @@ impl Process for TerminalProcess {
         while let Some(msg) = env.recv_msg() {
             match msg.payload {
                 MessagePayload::KeyPress { key_code } => {
+                    self.last_typing_tick = self.tick_count;
                     if self.edit_state.is_some() {
                         match key_code {
                         19 => { // Ctrl+S

@@ -8,6 +8,7 @@ extern "C" {
     fn gui_app_mouse_move_js(id: u32, local_x: i32, local_y: i32) -> i32;
     fn gui_app_mouse_down_js(id: u32, local_x: i32, local_y: i32) -> i32;
     fn gui_app_mouse_up_js(id: u32, local_x: i32, local_y: i32) -> i32;
+    fn gui_app_key_down_js(id: u32, key_code: u32) -> i32;
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -49,6 +50,7 @@ pub struct WindowManager {
     drag_offset_y: i32,
     resize_window_index: Option<usize>,
     resize_edge: ResizeEdge,
+    tick_count: u32,
     screen_w: i32,
     screen_h: i32,
     start_menu_open: bool,
@@ -69,6 +71,7 @@ impl WindowManager {
             drag_offset_y: 0,
             resize_window_index: None,
             resize_edge: ResizeEdge::None,
+            tick_count: 0,
             screen_w,
             screen_h,
             start_menu_open: false,
@@ -220,8 +223,12 @@ impl WindowManager {
                 (0.2, 0.8, 0.4, "💻")
             } else if w.title == "Calculator" {
                 (0.8, 0.6, 0.2, "🖩")
-            } else {
+            } else if w.title == "Notepad" {
+                (0.8, 0.4, 0.6, "📝")
+            } else if w.title == "File Manager" {
                 (0.4, 0.4, 0.8, "📁")
+            } else {
+                (0.5, 0.5, 0.5, "❓")
             };
 
             env.send_msg(self.display_server_pid, MessagePayload::DrawRect { 
@@ -305,6 +312,23 @@ impl WindowManager {
                 text: "File Manager".to_string(), 
                 font_size: 16.0, r: 0.9, g: 0.9, b: 0.9, a: 1.0 
             });
+
+            // Start Menu: Notepad App entry
+            env.send_msg(self.display_server_pid, MessagePayload::DrawRect { 
+                x: dock_x + 20, y: dock_y - 150, w: 40, h: 40, 
+                r: 0.8, g: 0.4, b: 0.6, a: 1.0,
+                radius: 8.0, shadow_blur: 5.0
+            });
+            env.send_msg(self.display_server_pid, MessagePayload::DrawCenteredText {
+                x: dock_x + 40, y: dock_y - 130,
+                text: "📝".to_string(),
+                font_size: 20.0, r: 1.0, g: 1.0, b: 1.0, a: 1.0
+            });
+            env.send_msg(self.display_server_pid, MessagePayload::DrawText { 
+                x: dock_x + 70, y: dock_y - 140, 
+                text: "Notepad".to_string(), 
+                font_size: 16.0, r: 0.9, g: 0.9, b: 0.9, a: 1.0 
+            });
         }
     }
 }
@@ -315,6 +339,11 @@ impl Process for WindowManager {
 
     fn tick(&mut self, env: &mut SyscallEnv) -> bool {
         let mut needs_redraw = false;
+        
+        self.tick_count += 1;
+        if self.tick_count % 30 == 0 {
+            needs_redraw = true; // periodic redraw for cursor blinking
+        }
 
         while let Some(msg) = env.recv_msg() {
             match msg.payload {
@@ -446,14 +475,22 @@ impl Process for WindowManager {
                                 // Terminal click
                                 if self.mouse_y >= dock_y - 300 && self.mouse_y <= dock_y - 260 {
                                     env.spawn_process("terminal");
+                                    self.start_menu_open = false;
                                 }
                                 // Calculator click
                                 else if self.mouse_y >= dock_y - 250 && self.mouse_y <= dock_y - 210 {
                                     env.spawn_process("/bin/calc");
+                                    self.start_menu_open = false;
                                 }
                                 // File Manager click
                                 else if self.mouse_y >= dock_y - 200 && self.mouse_y <= dock_y - 160 {
                                     env.spawn_process("/bin/fileman");
+                                    self.start_menu_open = false;
+                                }
+                                // Notepad click
+                                else if self.mouse_y >= dock_y - 150 && self.mouse_y <= dock_y - 110 {
+                                    env.spawn_process("/bin/notepad");
+                                    self.start_menu_open = false;
                                 }
                                 
                                 self.start_menu_open = false;
@@ -597,7 +634,6 @@ impl Process for WindowManager {
                                     }
                                 }
                             }
-                            needs_redraw = true;
                         }
                     } else {
                         self.drag_window_index = None;
@@ -624,7 +660,14 @@ impl Process for WindowManager {
                 }
                 MessagePayload::KeyPress { key_code } => {
                     if let Some(active_win) = self.windows.last() {
-                        env.send_msg(active_win.owner, MessagePayload::KeyPress { key_code });
+                        if active_win.owner == 0 {
+                            let redraw = unsafe { gui_app_key_down_js(active_win.id, key_code) };
+                            if redraw != 0 {
+                                needs_redraw = true;
+                            }
+                        } else {
+                            env.send_msg(active_win.owner, MessagePayload::KeyPress { key_code });
+                        }
                     }
                 }
                 _ => {}
