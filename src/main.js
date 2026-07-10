@@ -1230,6 +1230,32 @@ async function bootstrap() {
             
             window.textCtx.fillText(text, x, y);
         },
+        measure_text_js: (ptr, len, font_size) => {
+            if (!window.textCtx) {
+                const tc = document.getElementById("text-overlay");
+                if (tc) {
+                    window.textCtx = tc.getContext("2d", { alpha: true });
+                }
+            }
+            if (!window.globalTextDecoder) {
+                window.globalTextDecoder = new TextDecoder();
+            }
+            if (!window.textCtx) return 0.0;
+            const wasm = window.__WASI_PROXY.wasm || wasmInstance;
+            const memory = new Uint8Array(wasm.exports.memory.buffer);
+            const text = window.globalTextDecoder.decode(memory.subarray(ptr, ptr + len));
+            
+            const font = `${font_size}px monospace`;
+            if (!window.textCtxCache) {
+                window.textCtxCache = { font: "", fillStyle: "", baseline: "" };
+            }
+            if (window.textCtxCache.font !== font) {
+                window.textCtx.font = font;
+                window.textCtxCache.font = font;
+            }
+            
+            return window.textCtx.measureText(text).width;
+        },
         draw_centered_text_js: (x, y, ptr, len, font_size, r, g, b, a) => {
             if (!window.textCtx) {
                 const tc = document.getElementById("text-overlay");
@@ -1271,6 +1297,19 @@ async function bootstrap() {
             
             // Restore alignment
             window.textCtx.textAlign = 'start';
+        },
+        clip_text_js: (x, y, w, h) => {
+            if (window.textCtx) {
+                window.textCtx.save();
+                window.textCtx.beginPath();
+                window.textCtx.rect(x, y, w, h);
+                window.textCtx.clip();
+            }
+        },
+        clear_clip_text_js: () => {
+            if (window.textCtx) {
+                window.textCtx.restore();
+            }
         },
         clear_text_js: () => {
             if (!window.textCtx) {

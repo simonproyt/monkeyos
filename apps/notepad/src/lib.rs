@@ -18,7 +18,10 @@ struct Notepad {
     tick_count: u32,
     is_saving_as: bool,
     save_as_filename: String,
+    save_as_cursor_pos: usize,
     last_typing_time: u128,
+    scroll_x: f32,
+    scroll_y: f32,
 }
 
 static mut NOTEPAD: Option<Notepad> = None;
@@ -45,7 +48,10 @@ pub extern "C" fn init() {
         tick_count: 0,
         is_saving_as: false,
         save_as_filename: String::new(),
+        save_as_cursor_pos: 0,
         last_typing_time: 0,
+        scroll_x: 0.0,
+        scroll_y: 0.0,
     };
 
     unsafe {
@@ -77,19 +83,44 @@ pub extern "C" fn tick(x: i32, y: i32, w: i32, h: i32) {
 
     app.tick_count = app.tick_count.wrapping_add(1);
 
+    // Auto-scroll to keep cursor visible
+    if app.cursor_row < app.text.len() {
+        let text_width = if app.cursor_col > 0 && app.cursor_col <= app.text[app.cursor_row].len() {
+            unsafe { libui::measure_text_js(app.text[app.cursor_row].as_ptr(), app.cursor_col, 16.0) }
+        } else {
+            0.0
+        };
+        
+        let target_x = text_width - (w as f32 - 40.0);
+        if target_x > app.scroll_x { app.scroll_x = target_x; }
+        if text_width < app.scroll_x { app.scroll_x = text_width; }
+        
+        let cursor_y = (app.cursor_row as f32) * 20.0;
+        let target_y = cursor_y - (h as f32 - 90.0);
+        if target_y > app.scroll_y { app.scroll_y = target_y; }
+        if cursor_y < app.scroll_y { app.scroll_y = cursor_y; }
+    }
+
     // Draw text
-    let mut text_y = content_y + 50;
+    unsafe {
+        libui::clip_text_js(x as f32, (content_y + 40) as f32, w as f32, (h - 40) as f32);
+    }
+    
+    let mut text_y = content_y as f32 + 50.0 - app.scroll_y;
     for (i, line) in app.text.iter().enumerate() {
-        if text_y > y + h { break; }
-        unsafe {
-            libui::draw_text_js(
-                (x + 10) as f32,
-                text_y as f32,
-                line.as_ptr(),
-                line.len(),
-                16.0,
-                0.9, 0.9, 0.9, 1.0
-            );
+        if text_y > (y + h) as f32 { break; }
+        
+        if text_y >= (content_y as f32 + 30.0) {
+            unsafe {
+                libui::draw_text_js(
+                    x as f32 + 10.0 - app.scroll_x,
+                    text_y,
+                    line.as_ptr(),
+                    line.len(),
+                    16.0,
+                    0.9, 0.9, 0.9, 1.0
+                );
+            }
         }
         
         // Draw cursor if it's on this line and blinking is ON
@@ -99,13 +130,50 @@ pub extern "C" fn tick(x: i32, y: i32, w: i32, h: i32) {
             .as_millis();
             
         if !app.is_saving_as && i == app.cursor_row && ((time_ms % 1000) < 500 || time_ms.saturating_sub(app.last_typing_time) < 500) {
-            let cx = x as f32 + 10.0 + (app.cursor_col as f32 * 8.4); // 8.4px char width for 14px monospace
-            unsafe {
-                libui::draw_rect_js(cx, text_y as f32, 2.0, 14.0, 1.0, 1.0, 1.0, 0.8, 0.0, 0.0);
+            let text_width = if app.cursor_col > 0 && app.cursor_col <= line.len() {
+                unsafe { libui::measure_text_js(line.as_ptr(), app.cursor_col, 16.0) }
+            } else {
+                0.0
+            };
+            let cx = x as f32 + 10.0 + text_width - app.scroll_x;
+            if cx >= x as f32 && cx <= (x + w) as f32 && text_y >= (content_y as f32 + 40.0) {
+                unsafe {
+                    libui::draw_rect_js(cx, text_y as f32, 2.0, 16.0, 1.0, 1.0, 1.0, 0.8, 0.0, 0.0);
+                }
             }
         }
         
-        text_y += 20;
+        text_y += 20.0;
+    }
+
+    unsafe {
+        libui::clear_clip_text_js();
+    }
+
+    // Draw scrollbars
+    let view_h = h as f32 - 90.0;
+    let total_h = (app.text.len() as f32) * 20.0 + 20.0;
+    if total_h > view_h {
+        let sb_h = ((view_h / total_h) * view_h).max(20.0);
+        let sb_y = (content_y + 50) as f32 + (app.scroll_y / (total_h - view_h).max(1.0)) * (view_h - sb_h);
+        unsafe {
+            libui::draw_rect_js(x as f32 + w as f32 - 12.0, sb_y, 8.0, sb_h, 0.4, 0.4, 0.45, 0.8, 4.0, 0.0);
+        }
+    }
+
+    let view_w = w as f32 - 30.0;
+    let longest_line = app.text.iter().max_by_key(|l| l.len()).unwrap_or(&String::new()).clone();
+    let total_w = if longest_line.len() > 0 {
+        (unsafe { libui::measure_text_js(longest_line.as_ptr(), longest_line.len(), 16.0) }) + 20.0
+    } else {
+        0.0
+    };
+    if total_w > view_w {
+        let sb_w = ((view_w / total_w) * view_w).max(20.0);
+        let sb_x = x as f32 + 10.0 + (app.scroll_x / (total_w - view_w).max(1.0)) * (view_w - sb_w);
+        unsafe {
+            libui::draw_rect_js(sb_x, y as f32 + h as f32 - 12.0, sb_w, 8.0, 0.4, 0.4, 0.45, 0.8, 4.0, 0.0);
+        }
     }
 
     // Draw picker on top if open
@@ -141,7 +209,12 @@ pub extern "C" fn tick(x: i32, y: i32, w: i32, h: i32) {
             // Cursor for the text box
             let time_ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis();
             if (time_ms % 1000) < 500 || time_ms.saturating_sub(app.last_typing_time) < 500 {
-                let cx = mx as f32 + 85.0 + (app.save_as_filename.len() as f32 * 8.4);
+                let text_width = if app.save_as_cursor_pos > 0 && app.save_as_cursor_pos <= app.save_as_filename.len() {
+                    libui::measure_text_js(app.save_as_filename.as_ptr(), app.save_as_cursor_pos, 14.0)
+                } else {
+                    0.0
+                };
+                let cx = mx as f32 + 85.0 + text_width;
                 libui::draw_rect_js(cx, my as f32 + 10.0, 2.0, 14.0, 1.0, 1.0, 1.0, 0.8, 0.0, 0.0);
             }
         }
@@ -192,6 +265,7 @@ pub extern "C" fn handle_mouse_up(mx: i32, my: i32) -> i32 {
                 if let Some(path) = app.picker.selected_path.take() {
                     if let Some(name) = path.split('/').last() {
                         app.save_as_filename = name.to_string();
+                        app.save_as_cursor_pos = app.save_as_filename.len();
                     }
                 }
                 app.picker.is_open = true; // reopen
@@ -250,6 +324,7 @@ pub extern "C" fn handle_mouse_up(mx: i32, my: i32) -> i32 {
         app.is_saving_as = true;
         app.picker.open();
         app.save_as_filename.clear();
+        app.save_as_cursor_pos = 0;
         app.btn_save_as.is_pressed = false;
         redraw = true;
     }
@@ -283,14 +358,30 @@ pub extern "C" fn handle_key_down(key_code: u32) -> i32 {
                 app.picker.close();
             }
             8 => { // Backspace
-                app.save_as_filename.pop();
+                if app.save_as_cursor_pos > 0 && app.save_as_cursor_pos <= app.save_as_filename.len() {
+                    app.save_as_filename.remove(app.save_as_cursor_pos - 1);
+                    app.save_as_cursor_pos -= 1;
+                }
+            }
+            1037 => { // Left
+                if app.save_as_cursor_pos > 0 {
+                    app.save_as_cursor_pos -= 1;
+                }
+            }
+            1039 => { // Right
+                if app.save_as_cursor_pos < app.save_as_filename.len() {
+                    app.save_as_cursor_pos += 1;
+                }
             }
             17 | 27 => { // Ctrl+Q / Escape hack
                 app.is_saving_as = false;
                 app.picker.close();
             }
             c if c >= 32 && c <= 126 => {
-                app.save_as_filename.push(c as u8 as char);
+                if app.save_as_cursor_pos <= app.save_as_filename.len() {
+                    app.save_as_filename.insert(app.save_as_cursor_pos, c as u8 as char);
+                    app.save_as_cursor_pos += 1;
+                }
             }
             _ => {}
         }

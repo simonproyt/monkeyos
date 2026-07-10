@@ -6,6 +6,9 @@ pub mod picker;
 extern "C" {
     pub fn draw_rect_js(x: f32, y: f32, w: f32, h: f32, r: f32, g: f32, b: f32, a: f32, radius: f32, shadow_blur: f32);
     pub fn draw_text_js(x: f32, y: f32, ptr: *const u8, len: usize, font_size: f32, r: f32, g: f32, b: f32, a: f32);
+    pub fn measure_text_js(ptr: *const u8, len: usize, font_size: f32) -> f32;
+    pub fn clip_text_js(x: f32, y: f32, w: f32, h: f32);
+    pub fn clear_clip_text_js();
     pub fn clear_text_js();
 }
 

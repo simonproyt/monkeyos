@@ -56,6 +56,7 @@ pub struct WindowManager {
     start_menu_open: bool,
     last_click_time: u64,
     last_time_str: String,
+    last_half_second: u64,
 }
 
 impl WindowManager {
@@ -77,6 +78,7 @@ impl WindowManager {
             start_menu_open: false,
             last_click_time: 0,
             last_time_str: String::new(),
+            last_half_second: 0,
         }
     }
 
@@ -681,8 +683,16 @@ impl Process for WindowManager {
         let m = (s / 60) % 60;
         let h = (s / 3600) % 24;
         let time_str = format!("{:02}:{:02}", h, m);
+        let time_str = format!("{:02}:{:02}", h, m);
         if time_str != self.last_time_str {
             self.last_time_str = time_str;
+            needs_redraw = true;
+        }
+        
+        // Force redraw every 500ms for blinking cursors
+        let current_half_second = local_ms / 500;
+        if current_half_second != self.last_half_second {
+            self.last_half_second = current_half_second;
             needs_redraw = true;
         }
 
