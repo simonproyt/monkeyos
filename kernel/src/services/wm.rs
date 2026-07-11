@@ -37,6 +37,12 @@ struct Window {
     state: WindowState,
     restore_rect: Option<(i32, i32, i32, i32)>, // x, y, w, h
     terminal_lines: Vec<String>,
+    terminal_wrapped_lines: Vec<String>,
+    terminal_wrap_width: i32,
+    terminal_needs_wrap: bool,
+    terminal_is_pager: bool,
+    terminal_pager_title: Option<String>,
+    terminal_scroll_y: usize,
 }
 
 pub struct WindowManager {
@@ -165,14 +171,32 @@ impl WindowManager {
                     r: 0.1, g: 0.1, b: 0.12, a: 1.0,
                     radius: 0.0, shadow_blur: 0.0
                 });
-                let mut text_y = w.y + title_h + 20;
-                // Only draw visible lines (very basic scrolling by taking the end)
-                let max_lines = ((w.h - title_h) / 20) as usize;
-                let start_idx = if w.terminal_lines.len() > max_lines {
-                    w.terminal_lines.len() - max_lines
+
+                let max_lines = ((w.h - title_h - 20) / 20).max(1) as usize;
+                
+                let start_idx = if w.terminal_is_pager {
+                    w.terminal_scroll_y.min(w.terminal_wrapped_lines.len().saturating_sub(max_lines))
+                } else if w.terminal_wrapped_lines.len() > max_lines {
+                    w.terminal_wrapped_lines.len() - max_lines
                 } else { 0 };
                 
-                for line in w.terminal_lines.iter().skip(start_idx) {
+                let mut text_y = w.y + title_h + 20;
+                
+                // If pager, maybe draw a header/footer
+                if w.terminal_is_pager {
+                    if let Some(ref t) = w.terminal_pager_title {
+                        env.send_msg(self.display_server_pid, MessagePayload::DrawText {
+                            x: w.x + 10,
+                            y: w.y + title_h + 5,
+                            text: t.clone(),
+                            font_size: 14.0,
+                            r: 0.9, g: 0.5, b: 0.8, a: 1.0
+                        });
+                        text_y += 10;
+                    }
+                }
+                
+                for line in w.terminal_wrapped_lines.iter().skip(start_idx).take(max_lines) {
                     env.send_msg(self.display_server_pid, MessagePayload::DrawText {
                         x: w.x + 10,
                         y: text_y,
@@ -351,9 +375,17 @@ impl Process for WindowManager {
 
         while let Some(msg) = env.recv_msg() {
             match msg.payload {
-                MessagePayload::UpdateTerminalBuffer { id, lines } => {
+                MessagePayload::UpdateTerminalBuffer { id, lines, is_pager, pager_title, scroll_y } => {
                     if let Some(w) = self.windows.iter_mut().find(|w| w.id == id) {
                         w.terminal_lines = lines;
+                        if !w.terminal_is_pager && is_pager {
+                            w.terminal_scroll_y = 0;
+                        } else if !is_pager {
+                            w.terminal_scroll_y = scroll_y;
+                        }
+                        w.terminal_is_pager = is_pager;
+                        w.terminal_pager_title = pager_title;
+                        w.terminal_needs_wrap = true;
                         needs_redraw = true;
                     }
                 }
@@ -370,6 +402,12 @@ impl Process for WindowManager {
                         state: WindowState::Normal,
                         restore_rect: None,
                         terminal_lines: Vec::new(),
+                        terminal_wrapped_lines: Vec::new(),
+                        terminal_wrap_width: 0,
+                        terminal_needs_wrap: true,
+                        terminal_is_pager: false,
+                        terminal_pager_title: None,
+                        terminal_scroll_y: 0,
                     });
                     
                     needs_redraw = true;
@@ -663,14 +701,42 @@ impl Process for WindowManager {
                     }
                 }
                 MessagePayload::KeyPress { key_code } => {
-                    if let Some(active_win) = self.windows.last() {
+                    if let Some(active_win) = self.windows.last_mut() {
                         if active_win.owner == 0 {
                             let redraw = unsafe { gui_app_key_down_js(active_win.id, key_code) };
                             if redraw != 0 {
                                 needs_redraw = true;
                             }
                         } else {
-                            env.send_msg(active_win.owner, MessagePayload::KeyPress { key_code });
+                            if active_win.terminal_is_pager {
+                                match key_code {
+                                    1038 | 107 => { // up
+                                        if active_win.terminal_scroll_y > 0 {
+                                            active_win.terminal_scroll_y -= 1;
+                                            needs_redraw = true;
+                                        }
+                                    }
+                                    1040 | 106 => { // down
+                                        let max_lines = ((active_win.h - 30 - 20) / 20).max(1) as usize;
+                                        let limit = active_win.terminal_wrapped_lines.len().saturating_sub(max_lines);
+                                        if active_win.terminal_scroll_y < limit {
+                                            active_win.terminal_scroll_y += 1;
+                                            needs_redraw = true;
+                                        }
+                                    }
+                                    32 => { // space
+                                        let max_lines = ((active_win.h - 30 - 20) / 20).max(1) as usize;
+                                        let limit = active_win.terminal_wrapped_lines.len().saturating_sub(max_lines);
+                                        active_win.terminal_scroll_y = (active_win.terminal_scroll_y + max_lines.saturating_sub(1)).min(limit);
+                                        needs_redraw = true;
+                                    }
+                                    _ => {
+                                        env.send_msg(active_win.owner, MessagePayload::KeyPress { key_code });
+                                    }
+                                }
+                            } else {
+                                env.send_msg(active_win.owner, MessagePayload::KeyPress { key_code });
+                            }
                         }
                     }
                 }
@@ -699,6 +765,26 @@ impl Process for WindowManager {
         }
 
         if needs_redraw {
+            for w in self.windows.iter_mut() {
+                if w.title == "Terminal" && (w.terminal_needs_wrap || w.terminal_wrap_width != w.w) {
+                    let mut wrapped_lines = Vec::new();
+                    let chars_per_line = ((w.w - 20) as f32 / 8.4).max(10.0) as usize;
+
+                    for line in &w.terminal_lines {
+                        let mut current_line = line.as_str();
+                        while current_line.len() > chars_per_line {
+                            let (chunk, rest) = current_line.split_at(chars_per_line);
+                            wrapped_lines.push(chunk.to_string());
+                            current_line = rest;
+                        }
+                        wrapped_lines.push(current_line.to_string());
+                    }
+                    w.terminal_wrapped_lines = wrapped_lines;
+                    w.terminal_wrap_width = w.w;
+                    w.terminal_needs_wrap = false;
+                }
+            }
+            
             self.redraw(env);
         }
 

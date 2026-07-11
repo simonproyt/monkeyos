@@ -1183,6 +1183,36 @@ async function bootstrap() {
         sys_timezone_offset_ms: () => {
             return BigInt(new Date().getTimezoneOffset() * 60 * 1000);
         },
+        sys_fetch: (url_ptr, url_len, out_ptr, out_max_len) => {
+            if (!window.__WASI_PROXY.wasm) return -1;
+            const memory = new Uint8Array(window.__WASI_PROXY.wasm.exports.memory.buffer);
+            let urlStr = "";
+            for (let i = 0; i < url_len; i++) {
+                urlStr += String.fromCharCode(memory[url_ptr + i]);
+            }
+            
+            try {
+                const xhr = new XMLHttpRequest();
+                xhr.open("GET", urlStr, false); // synchronous
+                xhr.send(null);
+                
+                if (xhr.status === 200) {
+                    const text = xhr.responseText;
+                    if (!window.globalTextEncoder) window.globalTextEncoder = new TextEncoder();
+                    const encoded = window.globalTextEncoder.encode(text);
+                    const len = Math.min(encoded.length, out_max_len);
+                    for (let i = 0; i < len; i++) {
+                        memory[out_ptr + i] = encoded[i];
+                    }
+                    return len;
+                } else {
+                    return -1;
+                }
+            } catch (e) {
+                console.error("sys_fetch error:", e);
+                return -1;
+            }
+        },
         wasi_print_js: (id, ptr, len) => {
             const wasm = window.__WASI_PROXY.wasm || wasmInstance;
             const memory = new Uint8Array(wasm.exports.memory.buffer);

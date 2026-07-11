@@ -37,6 +37,7 @@ cd apps/notepad
 cargo build --target wasm32-wasip1 --release
 cd ../..
 
+
 mkdir -p public/bin
 cp target/wasm32-unknown-unknown/release/kernel.wasm public/
 cp target/wasm32-wasip1/release/hello.wasm public/bin/

@@ -2,6 +2,12 @@ use crate::process::{Process, ProcessId};
 use crate::sys::SyscallEnv;
 use crate::ipc::MessagePayload;
 
+pub struct PagerState {
+    pub lines: Vec<String>,
+    pub scroll_y: usize,
+    pub title: String,
+}
+
 pub struct TerminalProcess {
     pid: ProcessId,
     launched: bool,
@@ -12,6 +18,7 @@ pub struct TerminalProcess {
     cursor_pos: usize,
     cwd: String,
     edit_state: Option<String>,
+    pager_state: Option<PagerState>,
     history: Vec<String>,
     history_index: usize,
     tick_count: u32,
@@ -30,6 +37,7 @@ impl TerminalProcess {
             cursor_pos: 0,
             cwd: String::from("/"),
             edit_state: None,
+            pager_state: None,
             history: Vec::new(),
             history_index: 0,
             tick_count: 0,
@@ -65,7 +73,9 @@ impl TerminalProcess {
             if let Some(wm_pid) = env.lookup_service("wm") {
                 let mut lines = self.screen_buffer.clone();
                 
-                if let Some(ref edit_content) = self.edit_state {
+                if let Some(ref pager) = self.pager_state {
+                    lines = pager.lines.clone();
+                } else if let Some(ref edit_content) = self.edit_state {
                     // Editor mode: append the file content
                     let mut editor_lines: Vec<String> = edit_content.split('\n').map(|s| s.to_string()).collect();
                     if editor_lines.is_empty() {
@@ -115,9 +125,16 @@ impl TerminalProcess {
                     }
                 }
                 
+                let is_pager = self.pager_state.is_some();
+                let pager_title = self.pager_state.as_ref().map(|p| p.title.clone());
+                let scroll_y = self.pager_state.as_ref().map(|p| p.scroll_y).unwrap_or(0);
+                
                 env.send_msg(wm_pid, MessagePayload::UpdateTerminalBuffer { 
                     id, 
-                    lines
+                    lines,
+                    is_pager,
+                    pager_title,
+                    scroll_y
                 });
             }
         }
@@ -140,13 +157,65 @@ impl TerminalProcess {
 
         match program {
             "help" => {
-                self.print(env, "Available commands: help, clear, cd, ls, cat, echo, mkdir, rm, touch, pwd, sh, edit, mv, calc, fileman, notepad, \n");
-                self.print(env, "Try: ls /bin\n");
+                self.print(env, "Available commands: help, clear, cd, ls, cat, echo, mkdir, rm, touch, pwd, sh, edit, mv, grep, calc, fileman, notepad, man \n");
+                self.print(env, "Try: man ls\n");
             }
             "clear" => {
                 if let Some(_id) = self.window_id {
                     self.screen_buffer.clear();
                     self.flush_display(env);
+                }
+            }
+            "man" => {
+                if parts.len() < 2 {
+                    self.print(env, "Usage: man <command>\n");
+                } else {
+                    let cmd = parts[1];
+                    let url = format!("https://raw.githubusercontent.com/tldr-pages/tldr/refs/heads/main/pages/common/{}.md", cmd);
+                    let mut buffer = vec![0u8; 65536];
+                    let len = unsafe { crate::wasi::call_sys_fetch(url.as_ptr(), url.len(), buffer.as_mut_ptr(), buffer.len()) };
+                    
+                    if len < 0 {
+                        self.print(env, &format!("No manual entry for {}\n", cmd));
+                    } else {
+                        let md_text = String::from_utf8_lossy(&buffer[..len as usize]).to_string();
+                        let mut lines = Vec::new();
+                        let mut in_code_block = false;
+                        
+                        for line in md_text.lines() {
+                            if line.starts_with("```") {
+                                in_code_block = !in_code_block;
+                                continue;
+                            }
+                            let mut clean_line = line.to_string();
+                            if clean_line.starts_with('#') {
+                                clean_line = clean_line.trim_start_matches('#').trim().to_uppercase();
+                            }
+                            clean_line = clean_line.replace('`', "");
+                            clean_line = clean_line.replace("**", "");
+                            clean_line = clean_line.replace("*", "");
+                            clean_line = clean_line.replace("__", "");
+                            clean_line = clean_line.replace("_", "");
+                            clean_line = clean_line.replace("<br>", "");
+                            clean_line = clean_line.replace("<br/>", "");
+                            clean_line = clean_line.replace("{{", "");
+                            clean_line = clean_line.replace("}}", "");
+
+                            if in_code_block {
+                                lines.push(format!("  {}", clean_line));
+                            } else {
+                                lines.push(clean_line);
+                            }
+                        }
+                        
+                        self.pager_state = Some(PagerState {
+                            lines,
+                            scroll_y: 0,
+                            title: format!("Manual page {}(1) (press j/k to scroll, q to quit)", cmd),
+                        });
+                        self.flush_display(env);
+                        return;
+                    }
                 }
             }
             "edit" => {
@@ -261,7 +330,21 @@ impl Process for TerminalProcess {
             match msg.payload {
                 MessagePayload::KeyPress { key_code } => {
                     self.last_typing_tick = self.tick_count;
-                    if self.edit_state.is_some() {
+                    if self.pager_state.is_some() {
+                        let mut should_quit = false;
+                        if let Some(ref mut pager) = self.pager_state {
+                            match key_code {
+                                113 | 17 => { // 'q' or Ctrl+Q
+                                    should_quit = true;
+                                }
+                                _ => {}
+                            }
+                        }
+                        if should_quit {
+                            self.pager_state = None;
+                            needs_flush = true;
+                        }
+                    } else if self.edit_state.is_some() {
                         match key_code {
                         19 => { // Ctrl+S
                             if let Some(ref filename) = self.edit_state {

@@ -36,6 +36,7 @@ extern "C" {
     fn sys_execve(args_ptr: *const u8, args_len: usize, cwd_ptr: *const u8, cwd_len: usize, stdin_ptr: *const u8, stdin_len: usize, stdout_ptr: *const u8, stdout_len: usize, terminal_id: u32) -> i32;
     fn sys_time_ms() -> u64;
     fn sys_timezone_offset_ms() -> i64;
+    fn sys_fetch(url_ptr: *const u8, url_len: usize, out_ptr: *mut u8, out_max_len: usize) -> i32;
 }
 
 pub fn call_sys_time_ms() -> u64 {
@@ -44,6 +45,10 @@ pub fn call_sys_time_ms() -> u64 {
 
 pub fn call_sys_timezone_offset_ms() -> i64 {
     unsafe { sys_timezone_offset_ms() }
+}
+
+pub fn call_sys_fetch(url_ptr: *const u8, url_len: usize, out_ptr: *mut u8, out_max_len: usize) -> i32 {
+    unsafe { sys_fetch(url_ptr, url_len, out_ptr, out_max_len) }
 }
 
 pub fn call_sys_execve(args_buf: &[u8], cwd: &str, stdin: Option<&str>, stdout: Option<&str>, terminal_id: u32) -> i32 {

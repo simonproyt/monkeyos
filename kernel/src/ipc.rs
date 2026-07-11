@@ -10,7 +10,7 @@ pub enum MessagePayload {
     MouseMove { x: i32, y: i32 },
     MouseButton { down: bool },
     KeyPress { key_code: u32 },
-    UpdateTerminalBuffer { id: u32, lines: Vec<String> },
+    UpdateTerminalBuffer { id: u32, lines: Vec<String>, is_pager: bool, pager_title: Option<String>, scroll_y: usize },
     WasiPrintChar { id: u32, c: u8 },
     WindowClosed { id: u32 },
     DrawText { x: i32, y: i32, text: String, font_size: f32, r: f32, g: f32, b: f32, a: f32 },
