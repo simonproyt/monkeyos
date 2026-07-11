@@ -140,7 +140,7 @@ impl TerminalProcess {
 
         match program {
             "help" => {
-                self.print(env, "Available commands: help, clear, cd, ls, cat, echo, mkdir, rm, touch, pwd, sh, edit\n");
+                self.print(env, "Available commands: help, clear, cd, ls, cat, echo, mkdir, rm, touch, pwd, sh, edit, mv, calc, fileman, notepad, \n");
                 self.print(env, "Try: ls /bin\n");
             }
             "clear" => {

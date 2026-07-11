@@ -48,6 +48,25 @@ fn main() {
         "tail" => {
             let _ = uu_tail::uumain(args.into_iter());
         }
+        "mv" => {
+            let _ = uu_mv::uumain(args.into_iter());
+        }
+        "grep" => {
+            let mut args_iter = args.into_iter().skip(1); // skip "grep"
+            let pattern = args_iter.next().unwrap_or_default().to_string_lossy().to_string();
+            let file = args_iter.next().unwrap_or_default().to_string_lossy().to_string();
+            if pattern.is_empty() || file.is_empty() {
+                eprintln!("Usage: grep <pattern> <file>");
+            } else if let Ok(contents) = std::fs::read_to_string(&file) {
+                for line in contents.lines() {
+                    if line.contains(&pattern) {
+                        println!("{}", line);
+                    }
+                }
+            } else {
+                eprintln!("grep: {}: No such file or directory", file);
+            }
+        }
         _ => {
             eprintln!("{}: command not found in coreutils multicall binary", program);
         }
