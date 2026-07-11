@@ -63,6 +63,24 @@ pub extern "C" fn init() {
     unsafe {
         NOTEPAD = Some(app);
     }
+    
+    // Check if we were passed a file argument
+    if let Some(path) = std::env::args().nth(1) {
+        unsafe {
+            if let Some(app) = NOTEPAD.as_mut() {
+                app.current_file = Some(path.clone());
+                if let Ok(contents) = std::fs::read_to_string(&path) {
+                    app.text = contents.lines().map(|s| s.to_string()).collect();
+                    if app.text.is_empty() {
+                        app.text.push(String::new());
+                    }
+                    app.lbl_status.text = format!("Opened {}", path);
+                } else {
+                    app.lbl_status.text = format!("Error opening {}", path);
+                }
+            }
+        }
+    }
 }
 
 #[no_mangle]
@@ -85,7 +103,15 @@ pub extern "C" fn tick(x: i32, y: i32, w: i32, h: i32) {
     app.btn_open.draw(x + 10, content_y + 8);
     app.btn_save.draw(x + 100, content_y + 8);
     app.btn_save_as.draw(x + 190, content_y + 8);
-    app.lbl_status.draw(x + 300, content_y + 12);
+    
+    unsafe {
+        let clip_w = (w - 385).max(0);
+        if clip_w > 0 {
+            libui::clip_text_js((x + 300) as f32, content_y as f32, clip_w as f32, 40.0);
+            app.lbl_status.draw(x + 300, content_y + 12);
+            libui::clear_clip_text_js();
+        }
+    }
 
     app.tick_count = app.tick_count.wrapping_add(1);
 
@@ -304,6 +330,46 @@ pub extern "C" fn handle_mouse_down(mx: i32, my: i32) -> i32 {
            (my as f32) >= sb_y && (my as f32) <= sb_y + 24.0 {
             app.is_dragging_h_scroll = true;
             return handle_mouse_move(mx, my);
+        }
+    }
+    
+    // Check if clicked in text area
+    let text_area_y = content_y + 40;
+    if !app.picker.is_open && !app.is_saving_as {
+        let view_w_click = app.win.w - if total_h > view_h { 24 } else { 0 };
+        let view_h_click = app.win.h - 40 - if total_w > view_w { 24 } else { 0 };
+        
+        if my >= text_area_y && my < text_area_y + view_h_click {
+            if mx >= app.win.x && mx < app.win.x + view_w_click {
+                let relative_y = my as f32 - text_area_y as f32 + app.scroll_y;
+                let clicked_row = (relative_y / 20.0).floor() as usize;
+                
+                let actual_row = clicked_row.min(app.text.len().saturating_sub(1));
+                app.cursor_row = actual_row;
+                
+                let relative_x = mx as f32 - (app.win.x as f32 + 10.0) + app.scroll_x;
+                let line = &app.text[app.cursor_row];
+                
+                let mut best_col = 0;
+                let mut min_diff = f32::MAX;
+                
+                for i in 0..=line.len() {
+                    let w = if i > 0 {
+                        unsafe { libui::measure_text_js(line.as_ptr(), i, 16.0) }
+                    } else {
+                        0.0
+                    };
+                    
+                    let diff = (w - relative_x).abs();
+                    if diff < min_diff {
+                        min_diff = diff;
+                        best_col = i;
+                    }
+                }
+                app.cursor_col = best_col;
+                app.needs_autoscroll = false; // No need to autoscroll since they clicked here
+                redraw = true;
+            }
         }
     }
     

@@ -5,6 +5,12 @@ use libui::window::Window;
 use libui::{Button, Label, Widget};
 use std::fs;
 
+#[link(wasm_import_module = "env")]
+extern "C" {
+    fn sys_execve(args_ptr: *const u8, args_len: usize, cwd_ptr: *const u8, cwd_len: usize, stdin_ptr: *const u8, stdin_len: usize, stdout_ptr: *const u8, stdout_len: usize, terminal_id: u32) -> i32;
+}
+
+
 static mut WINDOW: Option<Window> = None;
 static mut LBL_PATH: Option<Label> = None;
 static mut BUTTONS: Option<Vec<(Button, f64, f64)>> = None;
@@ -87,15 +93,25 @@ fn handle_btn_click(text: &str) {
             refresh_dir();
         } else if text.starts_with("📄") {
             let file_name = &text[5..];
-            let _full_path = if CURRENT_PATH == "/" {
+            let full_path = if CURRENT_PATH == "/" {
                 format!("/{}", file_name)
             } else {
                 format!("{}/{}", CURRENT_PATH, file_name)
             };
             
-            // Launch notepad. We can pass the file path via args, but wait!
-            // We haven't implemented passing args to env.spawn_process.
-            // Oh well, just launch notepad! It can open files itself.
+            // Launch notepad with the file path
+            let mut args_buf = Vec::new();
+            args_buf.extend_from_slice(b"/bin/notepad\0");
+            args_buf.extend_from_slice(full_path.as_bytes());
+            args_buf.push(0);
+            
+            sys_execve(
+                args_buf.as_ptr(), args_buf.len(),
+                CURRENT_PATH.as_ptr(), CURRENT_PATH.len(),
+                std::ptr::null(), 0,
+                std::ptr::null(), 0,
+                0
+            );
         }
     }
 }
