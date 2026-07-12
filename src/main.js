@@ -1176,6 +1176,12 @@ async function bootstrap() {
 
     let wasmInstance;
 
+    const readString = (ptr, len) => {
+        const wasm = window.__WASI_PROXY.wasm || wasmInstance;
+        const memory = new Uint8Array(wasm.exports.memory.buffer);
+        return new TextDecoder().decode(memory.subarray(ptr, ptr + len));
+    };
+
     const env = {
         console_log: (ptr, len) => {
             const memory = new Uint8Array(wasmInstance.exports.memory.buffer);
@@ -1218,36 +1224,46 @@ async function bootstrap() {
             }
         },
         sys_play_tone: (freq, duration_ms, wave_type) => {
+            const play = () => {
+                const ctx = window.audioCtx;
+                if (!ctx) return;
+                
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                
+                const types = ['sine', 'square', 'sawtooth', 'triangle'];
+                osc.type = types[wave_type % 4] || 'sine';
+                osc.frequency.value = freq;
+                
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                
+                const now = ctx.currentTime;
+                const dur = duration_ms / 1000.0;
+                
+                // Add simple envelope to avoid clicks
+                gain.gain.setValueAtTime(0, now);
+                gain.gain.linearRampToValueAtTime(0.5, now + Math.min(0.02, dur / 2));
+                gain.gain.setValueAtTime(0.5, now + Math.max(0, dur - 0.02));
+                gain.gain.linearRampToValueAtTime(0, now + dur);
+                
+                osc.start(now);
+                osc.stop(now + dur);
+            };
+
             if (!window.audioCtx) {
-                // Initialize context on first beep, must be after user interaction
                 try {
                     window.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
                 } catch (e) {
                     return;
                 }
             }
+            
             if (window.audioCtx.state === 'suspended') {
-                window.audioCtx.resume();
+                window.audioCtx.resume().then(play).catch(() => {});
+            } else {
+                play();
             }
-
-            const osc = window.audioCtx.createOscillator();
-            const gain = window.audioCtx.createGain();
-            
-            const types = ['sine', 'square', 'sawtooth', 'triangle'];
-            osc.type = types[wave_type % 4] || 'sine';
-            osc.frequency.value = freq;
-            
-            osc.connect(gain);
-            gain.connect(window.audioCtx.destination);
-            osc.start();
-            
-            // Simple beep, avoid complex ramp values that might glitch
-            gain.gain.value = 0.5; // Half volume
-            setTimeout(() => {
-                try {
-                    osc.stop();
-                } catch (e) {}
-            }, duration_ms);
         },
         wasi_print_js: (id, ptr, len) => {
             const wasm = window.__WASI_PROXY.wasm || wasmInstance;
@@ -1396,8 +1412,7 @@ async function bootstrap() {
             if (!url) return;
             
             if (url.startsWith("/")) {
-                // Try to read from VFS
-                let vfs_file = window.vfs[url];
+                let vfs_file = vfs[url];
                 if (vfs_file && vfs_file.type === "file") {
                     if (typeof vfs_file.content === "string") {
                         if (vfs_file.content.startsWith("data:") || vfs_file.content.startsWith("http")) {
@@ -1415,9 +1430,6 @@ async function bootstrap() {
             if (!window.loadedImages) window.loadedImages = {};
             const img = new Image();
             img.onload = () => {
-                // Force a redraw by simulating a mouse move at the current position
-                // Wait, we don't track mouse position in JS easily here unless we store it, 
-                // but we can just set window.gpuDirty and tick the kernel or just push_mouse_move(0,0)
                 if (window.__WASI_PROXY.kernel) {
                     window.__WASI_PROXY.kernel.push_mouse_move(-1, -1);
                 }
