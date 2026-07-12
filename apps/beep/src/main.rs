@@ -7,7 +7,7 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     let mut freq = 440.0;
     let mut dur = 200;
-    let mut wave = 0; // Sine
+    let mut wave = 1; // Square
 
     if args.len() > 1 {
         if let Ok(f) = args[1].parse::<f32>() {

@@ -1238,12 +1238,25 @@ async function bootstrap() {
             }
         },
         sys_play_tone: (freq, duration_ms, wave_type) => {
+            const printToTerm = (str) => {
+                const termId = window.__WASI_PROXY && window.__WASI_PROXY.current_terminal_id;
+                const kernelPtr = window.__WASI_PROXY && window.__WASI_PROXY.kernelPtr;
+                const kernel = window.__WASI_PROXY && window.__WASI_PROXY.kernel;
+                if (termId && kernelPtr && kernel) {
+                    for (let i = 0; i < str.length; i++) {
+                        kernel.kernel_wasi_print_char(kernelPtr, termId, str.charCodeAt(i));
+                    }
+                    kernel.kernel_wasi_print_char(kernelPtr, termId, 10);
+                }
+                console.log(str);
+            };
+
             // Ensure AudioContext exists
             if (!window.audioCtx) {
                 try {
                     window.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
                 } catch (e) {
-                    console.error("AudioContext creation failed:", e);
+                    printToTerm("[MonkeyOS Audio] AudioContext creation failed: " + e.message);
                     return;
                 }
             }
@@ -1266,17 +1279,18 @@ async function bootstrap() {
 
                     const dur = Math.max(0.1, (duration_ms || 200) / 1000.0);
                     
-                    osc.start(0); // start immediately
-                    osc.stop(ctx.currentTime + dur);
+                    const t0 = ctx.currentTime;
+                    osc.start(t0); // start exactly at currentTime
+                    osc.stop(t0 + dur);
                     
-                    console.log('[MonkeyOS Audio] Playing tone:', freq, 'Hz,', duration_ms, 'ms, wave:', osc.type, 'ctx.state:', ctx.state);
+                    printToTerm(`[MonkeyOS Audio] Played freq=${freq}Hz, dur=${duration_ms}ms, wave=${osc.type}, state=${ctx.state}`);
                 } catch (e) {
-                    console.error('[MonkeyOS Audio] Error playing tone:', e);
+                    printToTerm(`[MonkeyOS Audio] Error playing tone: ${e.message}`);
                 }
             };
 
             if (ctx.state === 'suspended') {
-                ctx.resume().then(doPlay);
+                ctx.resume().then(doPlay).catch(e => printToTerm(`[MonkeyOS Audio] Resume failed: ${e.message}`));
             } else {
                 doPlay();
             }
@@ -1685,12 +1699,29 @@ async function bootstrap() {
     }
     requestAnimationFrame(loop);
 
+    let audioUnlocked = false;
     const initAudio = () => {
         if (!window.audioCtx) {
             window.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         }
         if (window.audioCtx.state === 'suspended') {
             window.audioCtx.resume();
+        }
+        
+        // Play a silent dummy sound to fully "unlock" the audio context on the first user gesture
+        if (!audioUnlocked && window.audioCtx.state !== 'closed') {
+            try {
+                const osc = window.audioCtx.createOscillator();
+                const gain = window.audioCtx.createGain();
+                gain.gain.value = 0; // completely silent
+                osc.connect(gain);
+                gain.connect(window.audioCtx.destination);
+                osc.start(0);
+                osc.stop(window.audioCtx.currentTime + 0.01);
+                audioUnlocked = true;
+            } catch (e) {
+                console.warn("Failed to unlock audio context:", e);
+            }
         }
     };
 
