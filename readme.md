@@ -8,7 +8,7 @@ MonkeyOS - An experimental webos that uses the wasm runtime and rust to work
 - unicode emoji based icons using the font rendering engine
 ## Whats not working/added
 - any 3d graphics 
-- sound and video playback
+- sound and video playback (the sound part is in progress but video is kinda hard so its not planned in the near future)
 - displaying the actual user name instead of somebody in ls -l but this is an uutils problem because it does that if you compile to non unix targets so there is no easy way to fix this
 - the ui not breaking after a small change
 - unit tests or any automated testing to auto check for bugs

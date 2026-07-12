@@ -255,6 +255,8 @@ impl WindowManager {
                 (0.8, 0.4, 0.6, "📝")
             } else if w.title == "File Manager" {
                 (0.4, 0.4, 0.8, "📁")
+            } else if w.title == "Image Viewer" {
+                (0.8, 0.4, 0.8, "🖼️")
             } else {
                 (0.5, 0.5, 0.5, "❓")
             };

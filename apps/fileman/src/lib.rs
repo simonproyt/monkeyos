@@ -99,9 +99,12 @@ fn handle_btn_click(text: &str) {
                 format!("{}/{}", CURRENT_PATH, file_name)
             };
             
-            // Launch notepad with the file path
+            // Launch notepad or imgview depending on file extension
+            let is_image = file_name.ends_with(".jpg") || file_name.ends_with(".png") || file_name.ends_with(".jpeg") || file_name.ends_with(".svg") || file_name.ends_with(".gif") || file_name.ends_with(".bmp") || file_name.ends_with(".webp");
+            let target_bin = if is_image { "/bin/imgview\0" } else { "/bin/notepad\0" };
+            
             let mut args_buf = Vec::new();
-            args_buf.extend_from_slice(b"/bin/notepad\0");
+            args_buf.extend_from_slice(target_bin.as_bytes());
             args_buf.extend_from_slice(full_path.as_bytes());
             args_buf.push(0);
             

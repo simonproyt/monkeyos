@@ -1188,6 +1188,20 @@ async function bootstrap() {
             const str = new TextDecoder().decode(memory.subarray(ptr, ptr + len));
             console.log(str);
         },
+        // Returns the launch argument (second arg from sys_execve) into the buffer.
+        // Returns the length written, or 0 if no arg was passed.
+        sys_get_launch_arg: (out_ptr, out_max_len) => {
+            const args = window.__WASI_PROXY.current_args || [];
+            if (args.length < 2) return 0; // no file arg
+            const arg = args[1]; // first real argument (args[0] is the binary path)
+            const wasm = window.__WASI_PROXY.wasm || wasmInstance;
+            const memory = new Uint8Array(wasm.exports.memory.buffer);
+            const encoder = new TextEncoder();
+            const bytes = encoder.encode(arg);
+            const len = Math.min(bytes.length, out_max_len);
+            memory.set(bytes.subarray(0, len), out_ptr);
+            return len;
+        },
         sys_time_ms: () => {
             return BigInt(Date.now());
         },
@@ -1224,45 +1238,47 @@ async function bootstrap() {
             }
         },
         sys_play_tone: (freq, duration_ms, wave_type) => {
-            const play = () => {
-                const ctx = window.audioCtx;
-                if (!ctx) return;
-                
-                const osc = ctx.createOscillator();
-                const gain = ctx.createGain();
-                
-                const types = ['sine', 'square', 'sawtooth', 'triangle'];
-                osc.type = types[wave_type % 4] || 'sine';
-                osc.frequency.value = freq;
-                
-                osc.connect(gain);
-                gain.connect(ctx.destination);
-                
-                const now = ctx.currentTime;
-                const dur = duration_ms / 1000.0;
-                
-                // Add simple envelope to avoid clicks
-                gain.gain.setValueAtTime(0, now);
-                gain.gain.linearRampToValueAtTime(0.5, now + Math.min(0.02, dur / 2));
-                gain.gain.setValueAtTime(0.5, now + Math.max(0, dur - 0.02));
-                gain.gain.linearRampToValueAtTime(0, now + dur);
-                
-                osc.start(now);
-                osc.stop(now + dur);
-            };
-
+            // Ensure AudioContext exists
             if (!window.audioCtx) {
                 try {
                     window.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
                 } catch (e) {
+                    console.error("AudioContext creation failed:", e);
                     return;
                 }
             }
+            const ctx = window.audioCtx;
             
-            if (window.audioCtx.state === 'suspended') {
-                window.audioCtx.resume().then(play).catch(() => {});
+            const doPlay = () => {
+                try {
+                    const osc = ctx.createOscillator();
+                    const gainNode = ctx.createGain();
+
+                    const waveTypes = ['sine', 'square', 'sawtooth', 'triangle'];
+                    osc.type = waveTypes[(wave_type >>> 0) % 4] || 'sine';
+                    osc.frequency.value = freq || 440;
+
+                    // Direct gain value — no fancy automation
+                    gainNode.gain.value = 0.5;
+
+                    osc.connect(gainNode);
+                    gainNode.connect(ctx.destination);
+
+                    const dur = Math.max(0.1, (duration_ms || 200) / 1000.0);
+                    
+                    osc.start(0); // start immediately
+                    osc.stop(ctx.currentTime + dur);
+                    
+                    console.log('[MonkeyOS Audio] Playing tone:', freq, 'Hz,', duration_ms, 'ms, wave:', osc.type, 'ctx.state:', ctx.state);
+                } catch (e) {
+                    console.error('[MonkeyOS Audio] Error playing tone:', e);
+                }
+            };
+
+            if (ctx.state === 'suspended') {
+                ctx.resume().then(doPlay);
             } else {
-                play();
+                doPlay();
             }
         },
         wasi_print_js: (id, ptr, len) => {

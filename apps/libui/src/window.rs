@@ -18,7 +18,8 @@ impl Window {
             "Calculator" => 1,
             "File Manager" => 2,
             "Notepad" => 3,
-            _ => 4,
+            "Image Viewer" => 4,
+            _ => 5,
         };
         let id = unsafe { sys_create_window(x, y, w, h, app_type) };
         Self {

@@ -2,6 +2,21 @@
 
 use libui::{window::Window, Button, Widget, picker::FilePicker};
 
+#[link(wasm_import_module = "env")]
+unsafe extern "C" {
+    fn sys_get_launch_arg(out_ptr: *mut u8, out_max_len: usize) -> usize;
+}
+
+fn get_launch_arg() -> Option<String> {
+    let mut buf = [0u8; 512];
+    let len = unsafe { sys_get_launch_arg(buf.as_mut_ptr(), buf.len()) };
+    if len > 0 {
+        Some(String::from_utf8_lossy(&buf[..len]).to_string())
+    } else {
+        None
+    }
+}
+
 struct ImgView {
     win: Window,
     btn_open: Button,
@@ -20,8 +35,17 @@ pub extern "C" fn init() {
             picker: FilePicker::new(),
             image_loaded: false,
         };
-        // Auto open picker on launch
-        app.picker.open();
+
+        // Check if a file path was passed as a launch argument
+        if let Some(path) = get_launch_arg() {
+            let url_bytes = path.as_bytes();
+            libui::load_image_js(1, url_bytes.as_ptr(), url_bytes.len());
+            app.image_loaded = true;
+        } else {
+            // No file arg — open the file picker
+            app.picker.open();
+        }
+
         APP = Some(app);
     }
 }
