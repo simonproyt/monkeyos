@@ -322,8 +322,9 @@ async function bootstrap() {
     let vfs = {
         "/": { type: "dir", children: ["home", "etc", "usr", "var", "tmp"], timestamp: Date.now() },
         "/home": { type: "dir", children: ["monkey"], timestamp: Date.now() },
-        "/home/monkey": { type: "dir", children: ["readme.txt"], timestamp: Date.now() },
+        "/home/monkey": { type: "dir", children: ["readme.txt", "demo.jpg"], timestamp: Date.now() },
         "/home/monkey/readme.txt": { type: "file", content: "Hello from MonkeyOS!\n", timestamp: Date.now() },
+        "/home/monkey/demo.jpg": { type: "file", content: "data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 300'%3E%3Crect width='400' height='300' fill='%231a1a24'/%3E%3Ccircle cx='200' cy='150' r='80' fill='%23ff5555'/%3E%3Ctext x='200' y='160' font-family='sans-serif' font-size='24' fill='white' text-anchor='middle'%3EMonkeyOS%3C/text%3E%3C/svg%3E", timestamp: Date.now() },
         "/etc": { type: "dir", children: ["os-release", "passwd"], timestamp: Date.now() },
         "/etc/os-release": { type: "file", content: "NAME=MonkeyOS\nVERSION=0.1.0\n", timestamp: Date.now() },
         "/etc/passwd": { type: "file", content: "root:x:0:0:root:/root:/bin/sh\n", timestamp: Date.now() },
@@ -338,13 +339,17 @@ async function bootstrap() {
         const savedVfs = await loadVfsFromDB(db);
         if (savedVfs) {
             vfs = savedVfs;
-            // Retrofit timestamps to old nodes if missing
+            // Inject demo.jpg if missing
+            if (!vfs["/home/monkey/demo.jpg"] && vfs["/home/monkey"]) {
+                vfs["/home/monkey"].children.push("demo.jpg");
+                vfs["/home/monkey/demo.jpg"] = { type: "file", content: "data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 300'%3E%3Crect width='400' height='300' fill='%231a1a24'/%3E%3Ccircle cx='200' cy='150' r='80' fill='%23ff5555'/%3E%3Ctext x='200' y='160' font-family='sans-serif' font-size='24' fill='white' text-anchor='middle'%3EMonkeyOS%3C/text%3E%3C/svg%3E", timestamp: Date.now() };
+            }
+        } else {  // Retrofit timestamps to old nodes if missing
             for (const path in vfs) {
                 if (!vfs[path].timestamp) {
                     vfs[path].timestamp = Date.now();
                 }
             }
-        } else {
             await saveVfsToDB(db, vfs);
         }
     } catch (e) {
@@ -361,7 +366,7 @@ async function bootstrap() {
         let shouldSaveVfs = false;
         
         // Preload binaries
-        const binaries = ['hello.wasm', 'coreutils.wasm', 'sh.wasm', 'edit.wasm', 'calc.wasm', 'fileman.wasm', 'notepad.wasm'];
+        const binaries = ['hello.wasm', 'coreutils.wasm', 'sh.wasm', 'edit.wasm', 'beep.wasm', 'imgview.wasm', 'calc.wasm', 'fileman.wasm', 'notepad.wasm'];
         
         function getBinaryFromDB(db, name) {
             return new Promise((resolve) => {
@@ -1184,34 +1189,65 @@ async function bootstrap() {
             return BigInt(new Date().getTimezoneOffset() * 60 * 1000);
         },
         sys_fetch: (url_ptr, url_len, out_ptr, out_max_len) => {
-            if (!window.__WASI_PROXY.wasm) return -1;
-            const memory = new Uint8Array(window.__WASI_PROXY.wasm.exports.memory.buffer);
-            let urlStr = "";
-            for (let i = 0; i < url_len; i++) {
-                urlStr += String.fromCharCode(memory[url_ptr + i]);
-            }
+            const url = readString(url_ptr, url_len);
+            if (!url) return -1;
             
             try {
+                // We'll do a synchronous XMLHttpRequest because WASM requires a synchronous return
+                // In a real OS this would be asynchronous and yield the process
                 const xhr = new XMLHttpRequest();
-                xhr.open("GET", urlStr, false); // synchronous
+                xhr.open('GET', url, false); // synchronous
                 xhr.send(null);
                 
                 if (xhr.status === 200) {
                     const text = xhr.responseText;
-                    if (!window.globalTextEncoder) window.globalTextEncoder = new TextEncoder();
-                    const encoded = window.globalTextEncoder.encode(text);
-                    const len = Math.min(encoded.length, out_max_len);
-                    for (let i = 0; i < len; i++) {
-                        memory[out_ptr + i] = encoded[i];
-                    }
+                    const encoder = new TextEncoder();
+                    const bytes = encoder.encode(text);
+                    const len = Math.min(bytes.length, out_max_len - 1);
+                    
+                    const memory = new Uint8Array(window.__WASI_PROXY.memory.buffer);
+                    memory.set(bytes.subarray(0, len), out_ptr);
+                    memory[out_ptr + len] = 0; // null terminator
                     return len;
                 } else {
                     return -1;
                 }
             } catch (e) {
-                console.error("sys_fetch error:", e);
+                console.error("sys_fetch failed:", e);
                 return -1;
             }
+        },
+        sys_play_tone: (freq, duration_ms, wave_type) => {
+            if (!window.audioCtx) {
+                // Initialize context on first beep, must be after user interaction
+                try {
+                    window.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                } catch (e) {
+                    return;
+                }
+            }
+            if (window.audioCtx.state === 'suspended') {
+                window.audioCtx.resume();
+            }
+
+            const osc = window.audioCtx.createOscillator();
+            const gain = window.audioCtx.createGain();
+            
+            const types = ['sine', 'square', 'sawtooth', 'triangle'];
+            osc.type = types[wave_type % 4] || 'sine';
+            osc.frequency.value = freq;
+            
+            osc.connect(gain);
+            gain.connect(window.audioCtx.destination);
+            osc.start();
+            
+            // Simple beep, avoid complex ramp values that might glitch
+            gain.gain.value = 0.5; // Half volume
+            setTimeout(() => {
+                try {
+                    osc.stop();
+                } catch (e) {}
+            }, duration_ms);
         },
         wasi_print_js: (id, ptr, len) => {
             const wasm = window.__WASI_PROXY.wasm || wasmInstance;
@@ -1355,6 +1391,48 @@ async function bootstrap() {
             }
         },
         clear_screen_js: () => window.clear_screen_js(),
+        load_image_js: (id, url_ptr, url_len) => {
+            let url = readString(url_ptr, url_len);
+            if (!url) return;
+            
+            if (url.startsWith("/")) {
+                // Try to read from VFS
+                let vfs_file = window.vfs[url];
+                if (vfs_file && vfs_file.type === "file") {
+                    if (typeof vfs_file.content === "string") {
+                        if (vfs_file.content.startsWith("data:") || vfs_file.content.startsWith("http")) {
+                            url = vfs_file.content;
+                        } else {
+                            url = "data:text/plain;charset=utf-8," + encodeURIComponent(vfs_file.content);
+                        }
+                    } else if (vfs_file.content instanceof Uint8Array) {
+                        const blob = new Blob([vfs_file.content]);
+                        url = URL.createObjectURL(blob);
+                    }
+                }
+            }
+            
+            if (!window.loadedImages) window.loadedImages = {};
+            const img = new Image();
+            img.onload = () => {
+                // Force a redraw by simulating a mouse move at the current position
+                // Wait, we don't track mouse position in JS easily here unless we store it, 
+                // but we can just set window.gpuDirty and tick the kernel or just push_mouse_move(0,0)
+                if (window.__WASI_PROXY.kernel) {
+                    window.__WASI_PROXY.kernel.push_mouse_move(-1, -1);
+                }
+            };
+            img.src = url;
+            window.loadedImages[id] = img;
+        },
+        draw_image_js: (id, x, y, w, h) => {
+            if (window.textCtx && window.loadedImages && window.loadedImages[id]) {
+                const img = window.loadedImages[id];
+                if (img.complete && img.naturalHeight !== 0) {
+                    window.textCtx.drawImage(img, x, y, w, h);
+                }
+            }
+        },
         draw_gui_app_js: (id, x, y, w, h) => {
             const app = window.gui_apps.find(a => a.__window_id === id);
             if (app && app.exports.tick) {
@@ -1579,10 +1657,23 @@ async function bootstrap() {
     }
     requestAnimationFrame(loop);
 
+    const initAudio = () => {
+        if (!window.audioCtx) {
+            window.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (window.audioCtx.state === 'suspended') {
+            window.audioCtx.resume();
+        }
+    };
+
     window.addEventListener('mousemove', (e) => kernel.push_mouse_move(Math.round(e.clientX), Math.round(e.clientY)));
-    window.addEventListener('mousedown', (e) => { if (e.button === 0) kernel.push_mouse_button(true); });
+    window.addEventListener('mousedown', (e) => { 
+        initAudio(); 
+        if (e.button === 0) kernel.push_mouse_button(true); 
+    });
     window.addEventListener('mouseup', (e) => { if (e.button === 0) kernel.push_mouse_button(false); });
     window.addEventListener('keydown', (e) => {
+        initAudio();
         if (e.ctrlKey) {
             if (e.key === 's' || e.key === 'S') {
                 e.preventDefault();

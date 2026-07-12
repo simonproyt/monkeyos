@@ -22,7 +22,7 @@ static mut BTN_SCROLL_DOWN: Option<Button> = None;
 #[no_mangle]
 pub extern "C" fn init() {
     unsafe {
-        WINDOW = Some(Window::new("File Manager", 100, 100, 400, 300));
+        WINDOW = Some(Window::new("File Manager", 100, 100, 400, 500));
         CURRENT_PATH = "/".to_string();
         BTN_SCROLL_UP = Some(Button::new("⬆", 30, 30));
         BTN_SCROLL_DOWN = Some(Button::new("⬇", 30, 30));
@@ -210,7 +210,7 @@ pub extern "C" fn handle_mouse_up(mx: i32, my: i32) -> i32 {
             if let Some(btn) = &mut BTN_SCROLL_DOWN {
                 if btn.is_pressed && mx >= bx_dn && mx <= bx_dn + btn.w && my >= by_dn && my <= by_dn + btn.h {
                     let max_scroll = if let Some(btns) = &BUTTONS {
-                        (btns.len() as i32 * 40 - (win.h - 70)).max(0)
+                        (60 + btns.len() as i32 * 40 - (win.h - 60)).max(0)
                     } else { 0 };
                     SCROLL_OFFSET = (SCROLL_OFFSET + 80).min(max_scroll);
                     btn.is_pressed = false;

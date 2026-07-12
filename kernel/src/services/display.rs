@@ -6,13 +6,15 @@ use crate::sys::SyscallEnv;
 
 
 #[link(wasm_import_module = "env")]
-extern "C" {
+unsafe extern "C" {
     fn draw_rect_js(x: f32, y: f32, w: f32, h: f32, r: f32, g: f32, b: f32, a: f32, radius: f32, shadow_blur: f32);
     fn draw_gui_app_js(id: u32, x: i32, y: i32, w: i32, h: i32);
     fn clear_screen_js();
     fn draw_text_js(x: f32, y: f32, ptr: *const u8, len: usize, font_size: f32, r: f32, g: f32, b: f32, a: f32);
     fn draw_centered_text_js(x: f32, y: f32, ptr: *const u8, len: usize, font_size: f32, r: f32, g: f32, b: f32, a: f32);
     fn clear_text_js();
+    fn load_image_js(id: u32, ptr: *const u8, len: usize);
+    fn draw_image_js(id: u32, x: f32, y: f32, w: f32, h: f32);
 }
 
 pub struct DisplayServer {
@@ -49,6 +51,12 @@ impl crate::process::Process for DisplayServer {
                 }
                 MessagePayload::ClearText => {
                     unsafe { clear_text_js() };
+                }
+                MessagePayload::LoadImage { id, url } => {
+                    unsafe { load_image_js(id, url.as_ptr(), url.len()) };
+                }
+                MessagePayload::DrawImage { id, x, y, w, h } => {
+                    unsafe { draw_image_js(id, x as f32, y as f32, w as f32, h as f32) };
                 }
                 _ => {}
             }

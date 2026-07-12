@@ -357,6 +357,23 @@ impl WindowManager {
                 text: "Notepad".to_string(), 
                 font_size: 16.0, r: 0.9, g: 0.9, b: 0.9, a: 1.0 
             });
+
+            // Start Menu: ImgView App entry
+            env.send_msg(self.display_server_pid, MessagePayload::DrawRect { 
+                x: dock_x + 20, y: dock_y - 100, w: 40, h: 40, 
+                r: 0.2, g: 0.6, b: 0.8, a: 1.0,
+                radius: 8.0, shadow_blur: 5.0
+            });
+            env.send_msg(self.display_server_pid, MessagePayload::DrawCenteredText {
+                x: dock_x + 40, y: dock_y - 80,
+                text: "🖼️".to_string(),
+                font_size: 20.0, r: 1.0, g: 1.0, b: 1.0, a: 1.0
+            });
+            env.send_msg(self.display_server_pid, MessagePayload::DrawText { 
+                x: dock_x + 70, y: dock_y - 90, 
+                text: "Image Viewer".to_string(), 
+                font_size: 16.0, r: 0.9, g: 0.9, b: 0.9, a: 1.0 
+            });
         }
     }
 }
@@ -535,6 +552,11 @@ impl Process for WindowManager {
                                 // Notepad click
                                 else if self.mouse_y >= dock_y - 150 && self.mouse_y <= dock_y - 110 {
                                     env.spawn_process("/bin/notepad");
+                                    self.start_menu_open = false;
+                                }
+                                // ImgView click
+                                else if self.mouse_y >= dock_y - 100 && self.mouse_y <= dock_y - 60 {
+                                    env.spawn_process("/bin/imgview");
                                     self.start_menu_open = false;
                                 }
                                 

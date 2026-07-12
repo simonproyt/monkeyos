@@ -31,12 +31,13 @@ pub fn handle_fd_write(fd: u32, iovs_ptr: u32, iovs_len: u32, nwritten_ptr: u32)
 }
 
 #[link(wasm_import_module = "env")]
-extern "C" {
+unsafe extern "C" {
     fn wasi_print_js(id: u32, ptr: *const u8, len: usize);
     fn sys_execve(args_ptr: *const u8, args_len: usize, cwd_ptr: *const u8, cwd_len: usize, stdin_ptr: *const u8, stdin_len: usize, stdout_ptr: *const u8, stdout_len: usize, terminal_id: u32) -> i32;
     fn sys_time_ms() -> u64;
     fn sys_timezone_offset_ms() -> i64;
     fn sys_fetch(url_ptr: *const u8, url_len: usize, out_ptr: *mut u8, out_max_len: usize) -> i32;
+    fn sys_play_tone(freq: f32, duration_ms: u32, wave_type: u32);
 }
 
 pub fn call_sys_time_ms() -> u64 {
@@ -49,6 +50,10 @@ pub fn call_sys_timezone_offset_ms() -> i64 {
 
 pub fn call_sys_fetch(url_ptr: *const u8, url_len: usize, out_ptr: *mut u8, out_max_len: usize) -> i32 {
     unsafe { sys_fetch(url_ptr, url_len, out_ptr, out_max_len) }
+}
+
+pub fn call_sys_play_tone(freq: f32, duration_ms: u32, wave_type: u32) {
+    unsafe { sys_play_tone(freq, duration_ms, wave_type) }
 }
 
 pub fn call_sys_execve(args_buf: &[u8], cwd: &str, stdin: Option<&str>, stdout: Option<&str>, terminal_id: u32) -> i32 {
