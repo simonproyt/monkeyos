@@ -366,7 +366,7 @@ async function bootstrap() {
         let shouldSaveVfs = false;
         
         // Preload binaries
-        const binaries = ['hello.wasm', 'coreutils.wasm', 'sh.wasm', 'edit.wasm', 'beep.wasm', 'imgview.wasm', 'calc.wasm', 'fileman.wasm', 'notepad.wasm'];
+        const binaries = ['hello.wasm', 'coreutils.wasm', 'sh.wasm', 'edit.wasm', 'beep.wasm', 'fetch.wasm', 'imgview.wasm', 'calc.wasm', 'fileman.wasm', 'notepad.wasm'];
         
         function getBinaryFromDB(db, name) {
             return new Promise((resolve) => {
@@ -1209,31 +1209,49 @@ async function bootstrap() {
             return BigInt(new Date().getTimezoneOffset() * 60 * 1000);
         },
         sys_fetch: (url_ptr, url_len, out_ptr, out_max_len) => {
-            const url = readString(url_ptr, url_len);
+            let url = readString(url_ptr, url_len);
             if (!url) return -1;
             
-            try {
-                // We'll do a synchronous XMLHttpRequest because WASM requires a synchronous return
-                // In a real OS this would be asynchronous and yield the process
+            // Auto-prefix http:// if no protocol is specified
+            if (!url.startsWith('http://') && !url.startsWith('https://') && !url.startsWith('/')) {
+                url = 'https://' + url;
+            }
+
+            const attemptFetch = (targetUrl) => {
                 const xhr = new XMLHttpRequest();
-                xhr.open('GET', url, false); // synchronous
+                xhr.open('GET', targetUrl, false); // synchronous
                 xhr.send(null);
                 
-                if (xhr.status === 200) {
+                if (xhr.status >= 200 && xhr.status < 300) {
                     const text = xhr.responseText;
                     const encoder = new TextEncoder();
                     const bytes = encoder.encode(text);
                     const len = Math.min(bytes.length, out_max_len - 1);
                     
-                    const memory = new Uint8Array(window.__WASI_PROXY.memory.buffer);
+                    const wasm = window.__WASI_PROXY && window.__WASI_PROXY.wasm ? window.__WASI_PROXY.wasm : wasmInstance;
+                    const memory = new Uint8Array(wasm.exports.memory.buffer);
                     memory.set(bytes.subarray(0, len), out_ptr);
                     memory[out_ptr + len] = 0; // null terminator
                     return len;
-                } else {
-                    return -1;
                 }
+                return -1;
+            };
+            
+            try {
+                let res = attemptFetch(url);
+                if (res !== -1) return res;
+                // If it returns -1 but doesn't throw, it might be a 404, but we still try proxy just in case
+                throw new Error("HTTP Error");
             } catch (e) {
-                console.error("sys_fetch failed:", e);
+                console.warn(`sys_fetch: Direct fetch failed for ${url}, trying CORS proxy...`);
+                try {
+                    // Try with CORS proxy (corsproxy.io is much faster and less likely to hang the sync XHR)
+                    const proxyUrl = 'https://corsproxy.io/?' + encodeURIComponent(url);
+                    let res = attemptFetch(proxyUrl);
+                    if (res !== -1) return res;
+                } catch (e2) {
+                    console.error("sys_fetch proxy failed:", e2);
+                }
                 return -1;
             }
         },

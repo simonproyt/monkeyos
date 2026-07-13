@@ -27,6 +27,11 @@ cd apps/beep
 cargo build --target wasm32-wasip1 --release
 cd ../..
 
+echo "Building fetch executable..."
+cd apps/fetch
+cargo build --target wasm32-wasip1 --release
+cd ../..
+
 echo "Building imgview executable..."
 cd apps/imgview
 cargo build --target wasm32-wasip1 --release
@@ -55,6 +60,7 @@ cp target/wasm32-wasip1/release/coreutils.wasm public/bin/
 cp target/wasm32-wasip1/release/sh.wasm public/bin/
 cp target/wasm32-wasip1/release/edit.wasm public/bin/
 cp target/wasm32-wasip1/release/beep.wasm public/bin/
+cp target/wasm32-wasip1/release/fetch.wasm public/bin/
 cp target/wasm32-wasip1/release/imgview.wasm public/bin/
 cp target/wasm32-wasip1/release/calc.wasm public/bin/
 cp target/wasm32-wasip1/release/fileman.wasm public/bin/

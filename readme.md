@@ -1,14 +1,14 @@
 MonkeyOS - An experimental webos that uses the wasm runtime and rust to work
 
 ## Whats working
-- basic filesystem that is backed by indexdb and supports the caching of wasm binaries for faster loading cause downloading 20 megs of wasm is kinda slow (deprecated because of json reserilzation taking a lot of time when we have 8 megs of binaries)
+- basic filesystem that is backed by indexdb and supports the caching of wasm binaries for faster loading cause downloading 20 megs of wasm is kinda slow (back now but in a seprate db so it dosent slow down the normal fs)
 - basic process management
 - a basic shell with rust uutils backed commands and unix pipes support
 - a cli text editor
 - unicode emoji based icons using the font rendering engine
 ## Whats not working/added
 - any 3d graphics 
-- sound and video playback (the sound part is in progress but video is kinda hard so its not planned in the near future)
+- sound and video playback (the sound part works but video is kinda hard so its not planned in the near future)
 - displaying the actual user name instead of somebody in ls -l but this is an uutils problem because it does that if you compile to non unix targets so there is no easy way to fix this
 - the ui not breaking after a small change
 - unit tests or any automated testing to auto check for bugs
