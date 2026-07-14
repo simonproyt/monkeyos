@@ -52,6 +52,11 @@ cd apps/notepad
 cargo build --target wasm32-wasip1 --release
 cd ../..
 
+echo "Building Piano..."
+cd apps/piano
+cargo build --target wasm32-wasip1 --release
+cd ../..
+
 
 mkdir -p public/bin
 cp target/wasm32-unknown-unknown/release/kernel.wasm public/
@@ -65,4 +70,5 @@ cp target/wasm32-wasip1/release/imgview.wasm public/bin/
 cp target/wasm32-wasip1/release/calc.wasm public/bin/
 cp target/wasm32-wasip1/release/fileman.wasm public/bin/
 cp target/wasm32-wasip1/release/notepad.wasm public/bin/
+cp target/wasm32-wasip1/release/piano.wasm public/bin/
 echo "Build complete. Run ./serve.sh to start."

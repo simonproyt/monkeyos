@@ -257,6 +257,8 @@ impl WindowManager {
                 (0.4, 0.4, 0.8, "📁")
             } else if w.title == "Image Viewer" {
                 (0.8, 0.4, 0.8, "🖼️")
+            } else if w.title == "Piano" {
+                (0.8, 0.3, 0.3, "🎹")
             } else {
                 (0.5, 0.5, 0.5, "❓")
             };
@@ -287,93 +289,110 @@ impl WindowManager {
         // Draw Start Menu
         if self.start_menu_open {
             env.send_msg(self.display_server_pid, MessagePayload::DrawRect { 
-                x: dock_x, y: dock_y - 320, w: 250, h: 300, 
+                x: dock_x, y: dock_y - 370, w: 250, h: 350, 
                 r: 0.12, g: 0.12, b: 0.15, a: 0.95,
                 radius: 16.0, shadow_blur: 30.0
             });
 
             // Start Menu: Terminal App entry
             env.send_msg(self.display_server_pid, MessagePayload::DrawRect { 
-                x: dock_x + 20, y: dock_y - 300, w: 40, h: 40, 
+                x: dock_x + 20, y: dock_y - 350, w: 40, h: 40, 
                 r: 0.2, g: 0.8, b: 0.4, a: 1.0,
                 radius: 8.0, shadow_blur: 5.0
             });
             env.send_msg(self.display_server_pid, MessagePayload::DrawCenteredText {
-                x: dock_x + 40, y: dock_y - 280,
+                x: dock_x + 40, y: dock_y - 330,
                 text: "💻".to_string(),
                 font_size: 20.0, r: 1.0, g: 1.0, b: 1.0, a: 1.0
             });
             env.send_msg(self.display_server_pid, MessagePayload::DrawText { 
-                x: dock_x + 70, y: dock_y - 290, 
+                x: dock_x + 70, y: dock_y - 340, 
                 text: "Terminal".to_string(), 
                 font_size: 16.0, r: 0.9, g: 0.9, b: 0.9, a: 1.0 
             });
 
             // Start Menu: Calculator App entry
             env.send_msg(self.display_server_pid, MessagePayload::DrawRect { 
-                x: dock_x + 20, y: dock_y - 250, w: 40, h: 40, 
+                x: dock_x + 20, y: dock_y - 300, w: 40, h: 40, 
                 r: 0.8, g: 0.6, b: 0.2, a: 1.0,
                 radius: 8.0, shadow_blur: 5.0
             });
             env.send_msg(self.display_server_pid, MessagePayload::DrawCenteredText {
-                x: dock_x + 40, y: dock_y - 230,
+                x: dock_x + 40, y: dock_y - 280,
                 text: "🖩".to_string(),
                 font_size: 20.0, r: 1.0, g: 1.0, b: 1.0, a: 1.0
             });
             env.send_msg(self.display_server_pid, MessagePayload::DrawText { 
-                x: dock_x + 70, y: dock_y - 240, 
+                x: dock_x + 70, y: dock_y - 290, 
                 text: "Calculator".to_string(), 
                 font_size: 16.0, r: 0.9, g: 0.9, b: 0.9, a: 1.0 
             });
 
             // Start Menu: File Manager App entry
             env.send_msg(self.display_server_pid, MessagePayload::DrawRect { 
-                x: dock_x + 20, y: dock_y - 200, w: 40, h: 40, 
+                x: dock_x + 20, y: dock_y - 250, w: 40, h: 40, 
                 r: 0.4, g: 0.4, b: 0.8, a: 1.0,
                 radius: 8.0, shadow_blur: 5.0
             });
             env.send_msg(self.display_server_pid, MessagePayload::DrawCenteredText {
-                x: dock_x + 40, y: dock_y - 180,
+                x: dock_x + 40, y: dock_y - 230,
                 text: "📁".to_string(),
                 font_size: 20.0, r: 1.0, g: 1.0, b: 1.0, a: 1.0
             });
             env.send_msg(self.display_server_pid, MessagePayload::DrawText { 
-                x: dock_x + 70, y: dock_y - 190, 
+                x: dock_x + 70, y: dock_y - 240, 
                 text: "File Manager".to_string(), 
                 font_size: 16.0, r: 0.9, g: 0.9, b: 0.9, a: 1.0 
             });
 
             // Start Menu: Notepad App entry
             env.send_msg(self.display_server_pid, MessagePayload::DrawRect { 
-                x: dock_x + 20, y: dock_y - 150, w: 40, h: 40, 
+                x: dock_x + 20, y: dock_y - 200, w: 40, h: 40, 
                 r: 0.8, g: 0.4, b: 0.6, a: 1.0,
                 radius: 8.0, shadow_blur: 5.0
             });
             env.send_msg(self.display_server_pid, MessagePayload::DrawCenteredText {
-                x: dock_x + 40, y: dock_y - 130,
+                x: dock_x + 40, y: dock_y - 180,
                 text: "📝".to_string(),
                 font_size: 20.0, r: 1.0, g: 1.0, b: 1.0, a: 1.0
             });
             env.send_msg(self.display_server_pid, MessagePayload::DrawText { 
-                x: dock_x + 70, y: dock_y - 140, 
+                x: dock_x + 70, y: dock_y - 190, 
                 text: "Notepad".to_string(), 
                 font_size: 16.0, r: 0.9, g: 0.9, b: 0.9, a: 1.0 
             });
 
             // Start Menu: ImgView App entry
             env.send_msg(self.display_server_pid, MessagePayload::DrawRect { 
-                x: dock_x + 20, y: dock_y - 100, w: 40, h: 40, 
+                x: dock_x + 20, y: dock_y - 150, w: 40, h: 40, 
                 r: 0.2, g: 0.6, b: 0.8, a: 1.0,
                 radius: 8.0, shadow_blur: 5.0
             });
             env.send_msg(self.display_server_pid, MessagePayload::DrawCenteredText {
-                x: dock_x + 40, y: dock_y - 80,
+                x: dock_x + 40, y: dock_y - 130,
                 text: "🖼️".to_string(),
                 font_size: 20.0, r: 1.0, g: 1.0, b: 1.0, a: 1.0
             });
             env.send_msg(self.display_server_pid, MessagePayload::DrawText { 
-                x: dock_x + 70, y: dock_y - 90, 
+                x: dock_x + 70, y: dock_y - 140, 
                 text: "Image Viewer".to_string(), 
+                font_size: 16.0, r: 0.9, g: 0.9, b: 0.9, a: 1.0 
+            });
+
+            // Start Menu: Piano App entry
+            env.send_msg(self.display_server_pid, MessagePayload::DrawRect { 
+                x: dock_x + 20, y: dock_y - 100, w: 40, h: 40, 
+                r: 0.8, g: 0.3, b: 0.3, a: 1.0,
+                radius: 8.0, shadow_blur: 5.0
+            });
+            env.send_msg(self.display_server_pid, MessagePayload::DrawCenteredText {
+                x: dock_x + 40, y: dock_y - 80,
+                text: "🎹".to_string(),
+                font_size: 20.0, r: 1.0, g: 1.0, b: 1.0, a: 1.0
+            });
+            env.send_msg(self.display_server_pid, MessagePayload::DrawText { 
+                x: dock_x + 70, y: dock_y - 90, 
+                text: "Piano".to_string(), 
                 font_size: 16.0, r: 0.9, g: 0.9, b: 0.9, a: 1.0 
             });
         }
@@ -534,31 +553,36 @@ impl Process for WindowManager {
                         // Check Start Menu items
                         if self.start_menu_open {
                             if self.mouse_x >= dock_x && self.mouse_x <= dock_x + 250 && 
-                               self.mouse_y >= dock_y - 320 && self.mouse_y <= dock_y - 20 {
+                               self.mouse_y >= dock_y - 370 && self.mouse_y <= dock_y - 20 {
                                 
                                 // Terminal click
-                                if self.mouse_y >= dock_y - 300 && self.mouse_y <= dock_y - 260 {
+                                if self.mouse_y >= dock_y - 350 && self.mouse_y <= dock_y - 310 {
                                     env.spawn_process("terminal");
                                     self.start_menu_open = false;
                                 }
                                 // Calculator click
-                                else if self.mouse_y >= dock_y - 250 && self.mouse_y <= dock_y - 210 {
+                                else if self.mouse_y >= dock_y - 300 && self.mouse_y <= dock_y - 260 {
                                     env.spawn_process("/bin/calc");
                                     self.start_menu_open = false;
                                 }
                                 // File Manager click
-                                else if self.mouse_y >= dock_y - 200 && self.mouse_y <= dock_y - 160 {
+                                else if self.mouse_y >= dock_y - 250 && self.mouse_y <= dock_y - 210 {
                                     env.spawn_process("/bin/fileman");
                                     self.start_menu_open = false;
                                 }
                                 // Notepad click
-                                else if self.mouse_y >= dock_y - 150 && self.mouse_y <= dock_y - 110 {
+                                else if self.mouse_y >= dock_y - 200 && self.mouse_y <= dock_y - 160 {
                                     env.spawn_process("/bin/notepad");
                                     self.start_menu_open = false;
                                 }
                                 // ImgView click
-                                else if self.mouse_y >= dock_y - 100 && self.mouse_y <= dock_y - 60 {
+                                else if self.mouse_y >= dock_y - 150 && self.mouse_y <= dock_y - 110 {
                                     env.spawn_process("/bin/imgview");
+                                    self.start_menu_open = false;
+                                }
+                                // Piano click
+                                else if self.mouse_y >= dock_y - 100 && self.mouse_y <= dock_y - 60 {
+                                    env.spawn_process("/bin/piano");
                                     self.start_menu_open = false;
                                 }
                                 

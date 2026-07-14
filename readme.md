@@ -6,6 +6,7 @@ MonkeyOS - An experimental webos that uses the wasm runtime and rust to work
 - a basic shell with rust uutils backed commands and unix pipes support
 - a cli text editor
 - unicode emoji based icons using the font rendering engine
+- networking with the the fetch command and it tries to request the page themselves but its probably going to fail because of crocs but after that tries to request it via a proxy api
 ## Whats not working/added
 - any 3d graphics 
 - sound and video playback (the sound part works but video is kinda hard so its not planned in the near future)

@@ -41,7 +41,7 @@ pub struct Button {
     pub h: i32,
     pub is_hovered: bool,
     pub is_pressed: bool,
-    pub on_click: Option<fn()>,
+    pub on_click: Option<Box<dyn Fn()>>,
 }
 
 impl Button {
@@ -104,7 +104,7 @@ impl Widget for Button {
             self.is_pressed = false;
             needs_redraw = true;
             if inside {
-                if let Some(cb) = self.on_click {
+                if let Some(ref cb) = self.on_click {
                     cb();
                 }
             }
