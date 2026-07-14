@@ -1502,34 +1502,34 @@ async function bootstrap() {
                 window.__WASI_PROXY.wasm = prev;
             }
         },
-        gui_app_mouse_move_js: (id, mx, my) => {
+        gui_app_mouse_move_js: (id, mx, my, x, y) => {
             const app = window.gui_apps.find(a => a.__window_id === id);
             if (app && app.exports.handle_mouse_move) {
                 const prev = window.__WASI_PROXY.wasm;
                 window.__WASI_PROXY.wasm = app;
-                const ret = app.exports.handle_mouse_move(mx, my);
+                const ret = app.exports.handle_mouse_move(mx, my, x, y);
                 window.__WASI_PROXY.wasm = prev;
                 return ret;
             }
             return 0;
         },
-        gui_app_mouse_down_js: (id, mx, my) => {
+        gui_app_mouse_down_js: (id, mx, my, x, y) => {
             const app = window.gui_apps.find(a => a.__window_id === id);
             if (app && app.exports.handle_mouse_down) {
                 const prev = window.__WASI_PROXY.wasm;
                 window.__WASI_PROXY.wasm = app;
-                const ret = app.exports.handle_mouse_down(mx, my);
+                const ret = app.exports.handle_mouse_down(mx, my, x, y);
                 window.__WASI_PROXY.wasm = prev;
                 return ret;
             }
             return 0;
         },
-        gui_app_mouse_up_js: (id, mx, my) => {
+        gui_app_mouse_up_js: (id, mx, my, x, y) => {
             const app = window.gui_apps.find(a => a.__window_id === id);
             if (app && app.exports.handle_mouse_up) {
                 const prev = window.__WASI_PROXY.wasm;
                 window.__WASI_PROXY.wasm = app;
-                const ret = app.exports.handle_mouse_up(mx, my);
+                const ret = app.exports.handle_mouse_up(mx, my, x, y);
                 window.__WASI_PROXY.wasm = prev;
                 return ret;
             }

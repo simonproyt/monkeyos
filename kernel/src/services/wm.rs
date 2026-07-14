@@ -5,10 +5,10 @@ use crate::ipc::MessagePayload;
 
 #[link(wasm_import_module = "env")]
 extern "C" {
-    fn gui_app_mouse_move_js(id: u32, local_x: i32, local_y: i32) -> i32;
-    fn gui_app_mouse_down_js(id: u32, local_x: i32, local_y: i32) -> i32;
-    fn gui_app_mouse_up_js(id: u32, local_x: i32, local_y: i32) -> i32;
-    fn gui_app_key_down_js(id: u32, key_code: u32) -> i32;
+    fn gui_app_mouse_down_js(id: u32, mx: i32, my: i32, x: i32, y: i32) -> i32;
+    fn gui_app_mouse_up_js(id: u32, mx: i32, my: i32, x: i32, y: i32) -> i32;
+    fn gui_app_mouse_move_js(id: u32, mx: i32, my: i32, x: i32, y: i32) -> i32;
+    fn gui_app_key_down_js(id: u32, key: u32) -> i32;
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -464,7 +464,7 @@ impl Process for WindowManager {
                         // Forward if mouse is currently down (capture), or if it's within bounds
                         if self.mouse_is_down || (rx >= 0 && ry >= 0 && rx < active_win.w && ry < (active_win.h - title_h)) {
                             if active_win.owner == 0 {
-                                let redraw = unsafe { gui_app_mouse_move_js(active_win.id, self.mouse_x, self.mouse_y) };
+                                let redraw = unsafe { gui_app_mouse_move_js(active_win.id, self.mouse_x, self.mouse_y, active_win.x, active_win.y + title_h) };
                                 if redraw != 0 {
                                     needs_redraw = true;
                                 }
@@ -718,7 +718,7 @@ impl Process for WindowManager {
                                 let ry = self.mouse_y - (active_win.y + title_h);
                                 if rx >= 0 && ry >= 0 && rx < active_win.w && ry < (active_win.h - title_h) {
                                     if active_win.owner == 0 {
-                                        let redraw = unsafe { gui_app_mouse_down_js(active_win.id, self.mouse_x, self.mouse_y) };
+                                        let redraw = unsafe { gui_app_mouse_down_js(active_win.id, self.mouse_x, self.mouse_y, active_win.x, active_win.y + title_h) };
                                         if redraw != 0 {
                                             needs_redraw = true;
                                         }
@@ -738,7 +738,7 @@ impl Process for WindowManager {
                         let title_h = 30;
                         if let Some(active_win) = self.windows.last() {
                             if active_win.owner == 0 {
-                                let redraw = unsafe { gui_app_mouse_up_js(active_win.id, self.mouse_x, self.mouse_y) };
+                                let redraw = unsafe { gui_app_mouse_up_js(active_win.id, self.mouse_x, self.mouse_y, active_win.x, active_win.y + title_h) };
                                 if redraw != 0 {
                                     needs_redraw = true;
                                 }
