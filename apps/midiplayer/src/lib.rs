@@ -141,9 +141,18 @@ pub extern "C" fn tick(x: i32, y: i32, w: i32, h: i32) {
             let base_y = app.win.y as f32 + 250.0; // Moved down
             
             for (i, &level) in levels.iter().enumerate() {
-                // Smooth the level
+                // Gravity-based smoothing for snappy attack and natural fall
                 let target = level as f32;
-                app.smoothed_levels[i] += (target - app.smoothed_levels[i]) * 0.3; // Easing factor
+                if target > app.smoothed_levels[i] {
+                    // Fast attack
+                    app.smoothed_levels[i] += (target - app.smoothed_levels[i]) * 0.8;
+                } else {
+                    // Constant linear decay (gravity) avoids "sticky/laggy" exponential tails
+                    app.smoothed_levels[i] -= 8.0;
+                    if app.smoothed_levels[i] < target {
+                        app.smoothed_levels[i] = target;
+                    }
+                }
                 
                 let mut h = app.smoothed_levels[i] * 0.5; 
                 if h < 4.0 { h = 4.0; } 

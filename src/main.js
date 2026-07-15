@@ -1306,6 +1306,7 @@ async function bootstrap() {
             if (!window.analyser) {
                 window.analyser = window.audioCtx.createAnalyser();
                 window.analyser.fftSize = 256; // 128 bins total
+                window.analyser.smoothingTimeConstant = 0.0; // Let manual gravity handle smoothing entirely
                 window.analyser.connect(window.audioCtx.destination);
             }
             const ctx = window.audioCtx;
