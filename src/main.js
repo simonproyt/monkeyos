@@ -1213,6 +1213,30 @@ async function bootstrap() {
             let url = readString(url_ptr, url_len);
             if (!url) return -1;
             
+            // Check VFS first
+            if (url.startsWith("/")) {
+                const node = vfs[url];
+                if (node && node.type === "file") {
+                    let bytes;
+                    if (typeof node.content === 'string' && node.content.startsWith('data:')) {
+                        const b64 = node.content.split(',')[1];
+                        const binStr = atob(b64);
+                        bytes = new Uint8Array(binStr.length);
+                        for (let i = 0; i < binStr.length; i++) bytes[i] = binStr.charCodeAt(i);
+                    } else if (node.content instanceof Uint8Array || node.content instanceof ArrayBuffer) {
+                        bytes = new Uint8Array(node.content);
+                    } else {
+                        bytes = new TextEncoder().encode(node.content);
+                    }
+                    const len = Math.min(bytes.length, out_max_len - 1);
+                    const wasm = window.__WASI_PROXY && window.__WASI_PROXY.wasm ? window.__WASI_PROXY.wasm : wasmInstance;
+                    const memory = new Uint8Array(wasm.exports.memory.buffer);
+                    memory.set(bytes.subarray(0, len), out_ptr);
+                    if (len < out_max_len) memory[out_ptr + len] = 0;
+                    return len;
+                }
+            }
+
             // Auto-prefix http:// if no protocol is specified
             if (!url.startsWith('http://') && !url.startsWith('https://') && !url.startsWith('/')) {
                 url = 'https://' + url;

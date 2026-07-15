@@ -344,7 +344,7 @@ impl WindowManager {
 
             let mut y = dock_y as f32 - 320.0 - clamped_scroll;
             for app in filtered {
-                if y > dock_y as f32 - 370.0 && y < dock_y as f32 - 20.0 {
+                if y >= dock_y as f32 - 320.0 && y <= dock_y as f32 - 60.0 {
                     env.send_msg(self.display_server_pid, MessagePayload::DrawRect { 
                         x: dock_x + 20, y: y as i32, w: 40, h: 40, 
                         r: app.3.0, g: app.3.1, b: app.3.2, a: 1.0,
@@ -602,7 +602,7 @@ impl Process for WindowManager {
 
                                 if self.mouse_x < dock_x + 230 {
                                     for app in filtered {
-                                        if y > dock_y as f32 - 370.0 && y < dock_y as f32 - 20.0 {
+                                        if y >= dock_y as f32 - 320.0 && y <= dock_y as f32 - 60.0 {
                                             if click_y >= y && click_y <= y + 40.0 {
                                                 env.spawn_process(app.0);
                                                 clicked_app = true;
