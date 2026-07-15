@@ -1,0 +1,11 @@
+[package]
+name = "midiplayer"
+version = "0.1.0"
+edition = "2021"
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+base64 = { version = "0.22.1", features = ["alloc"] }
+libui = { version = "0.1.0", path = "../libui" }
+midly = "0.5.3"

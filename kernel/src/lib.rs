@@ -155,6 +155,16 @@ impl Kernel {
         }
     }
 
+    pub fn push_mouse_wheel(&mut self, delta_y: f32) {
+        if let Some(pid) = self.input_pid {
+            self.ipc.send(Message {
+                sender: 0,
+                receiver: pid,
+                payload: MessagePayload::MouseWheel { delta_y },
+            });
+        }
+    }
+
     pub fn push_key_event(&mut self, key_code: u32) {
         if let Some(pid) = self.input_pid {
             self.ipc.send(Message {
@@ -209,9 +219,15 @@ pub unsafe extern "C" fn kernel_push_mouse_move(kernel: *mut Kernel, x: i32, y: 
 /// The `kernel` pointer must be a valid, aligned, non-null pointer to a `Kernel` instance
 /// previously allocated by `kernel_new()`.
 #[no_mangle]
-pub unsafe extern "C" fn kernel_push_mouse_button(kernel: *mut Kernel, down: bool) {
-    let k = unsafe { &mut *kernel };
-    k.push_mouse_button(down);
+pub extern "C" fn kernel_push_mouse_button(kernel: *mut Kernel, down: bool) {
+    let kernel = unsafe { &mut *kernel };
+    kernel.push_mouse_button(down);
+}
+
+#[no_mangle]
+pub extern "C" fn kernel_push_mouse_wheel(kernel: *mut Kernel, delta_y: f32) {
+    let kernel = unsafe { &mut *kernel };
+    kernel.push_mouse_wheel(delta_y);
 }
 
 /// # Safety

@@ -60,10 +60,13 @@ pub struct WindowManager {
     screen_w: i32,
     screen_h: i32,
     start_menu_open: bool,
+    start_menu_search: String,
+    start_menu_scroll: f32,
     last_click_time: u64,
     last_time_str: String,
     last_half_second: u64,
     mouse_is_down: bool,
+    start_menu_scroll_dragging: bool,
 }
 
 impl WindowManager {
@@ -83,10 +86,13 @@ impl WindowManager {
             screen_w,
             screen_h,
             start_menu_open: false,
+            start_menu_search: String::new(),
+            start_menu_scroll: 0.0,
             last_click_time: 0,
             last_time_str: String::new(),
             last_half_second: 0,
             mouse_is_down: false,
+            start_menu_scroll_dragging: false,
         }
     }
 
@@ -294,107 +300,88 @@ impl WindowManager {
                 radius: 16.0, shadow_blur: 30.0
             });
 
-            // Start Menu: Terminal App entry
+            // Draw search bar
             env.send_msg(self.display_server_pid, MessagePayload::DrawRect { 
-                x: dock_x + 20, y: dock_y - 350, w: 40, h: 40, 
-                r: 0.2, g: 0.8, b: 0.4, a: 1.0,
-                radius: 8.0, shadow_blur: 5.0
+                x: dock_x + 10, y: dock_y - 360, w: 230, h: 30, 
+                r: 0.08, g: 0.08, b: 0.1, a: 1.0,
+                radius: 8.0, shadow_blur: 0.0
             });
-            env.send_msg(self.display_server_pid, MessagePayload::DrawCenteredText {
-                x: dock_x + 40, y: dock_y - 330,
-                text: "💻".to_string(),
-                font_size: 20.0, r: 1.0, g: 1.0, b: 1.0, a: 1.0
-            });
+            let search_text = if self.start_menu_search.is_empty() {
+                "Search apps...".to_string()
+            } else {
+                format!("{}|", self.start_menu_search)
+            };
             env.send_msg(self.display_server_pid, MessagePayload::DrawText { 
-                x: dock_x + 70, y: dock_y - 340, 
-                text: "Terminal".to_string(), 
-                font_size: 16.0, r: 0.9, g: 0.9, b: 0.9, a: 1.0 
+                x: dock_x + 20, y: dock_y - 345, 
+                text: search_text, 
+                font_size: 14.0, 
+                r: if self.start_menu_search.is_empty() { 0.5 } else { 0.9 }, 
+                g: if self.start_menu_search.is_empty() { 0.5 } else { 0.9 }, 
+                b: if self.start_menu_search.is_empty() { 0.5 } else { 0.9 }, 
+                a: 1.0 
             });
 
-            // Start Menu: Calculator App entry
-            env.send_msg(self.display_server_pid, MessagePayload::DrawRect { 
-                x: dock_x + 20, y: dock_y - 300, w: 40, h: 40, 
-                r: 0.8, g: 0.6, b: 0.2, a: 1.0,
-                radius: 8.0, shadow_blur: 5.0
-            });
-            env.send_msg(self.display_server_pid, MessagePayload::DrawCenteredText {
-                x: dock_x + 40, y: dock_y - 280,
-                text: "🖩".to_string(),
-                font_size: 20.0, r: 1.0, g: 1.0, b: 1.0, a: 1.0
-            });
-            env.send_msg(self.display_server_pid, MessagePayload::DrawText { 
-                x: dock_x + 70, y: dock_y - 290, 
-                text: "Calculator".to_string(), 
-                font_size: 16.0, r: 0.9, g: 0.9, b: 0.9, a: 1.0 
-            });
+            let all_apps = [
+                ("terminal", "💻", "Terminal", (0.2, 0.8, 0.4)),
+                ("/bin/calc", "🖩", "Calculator", (0.8, 0.6, 0.2)),
+                ("/bin/fileman", "📁", "File Manager", (0.4, 0.4, 0.8)),
+                ("/bin/notepad", "📝", "Notepad", (0.8, 0.4, 0.6)),
+                ("/bin/imgview", "🖼️", "Image Viewer", (0.2, 0.6, 0.8)),
+                ("/bin/piano", "🎹", "Piano", (0.8, 0.3, 0.3)),
+                ("/bin/midiplayer", "🎵", "MIDI Player", (0.4, 0.7, 0.8)),
+            ];
 
-            // Start Menu: File Manager App entry
-            env.send_msg(self.display_server_pid, MessagePayload::DrawRect { 
-                x: dock_x + 20, y: dock_y - 250, w: 40, h: 40, 
-                r: 0.4, g: 0.4, b: 0.8, a: 1.0,
-                radius: 8.0, shadow_blur: 5.0
-            });
-            env.send_msg(self.display_server_pid, MessagePayload::DrawCenteredText {
-                x: dock_x + 40, y: dock_y - 230,
-                text: "📁".to_string(),
-                font_size: 20.0, r: 1.0, g: 1.0, b: 1.0, a: 1.0
-            });
-            env.send_msg(self.display_server_pid, MessagePayload::DrawText { 
-                x: dock_x + 70, y: dock_y - 240, 
-                text: "File Manager".to_string(), 
-                font_size: 16.0, r: 0.9, g: 0.9, b: 0.9, a: 1.0 
-            });
+            let query = self.start_menu_search.to_lowercase();
+            let mut filtered = Vec::new();
+            for app in all_apps.iter() {
+                if app.2.to_lowercase().contains(&query) {
+                    filtered.push(app);
+                }
+            }
 
-            // Start Menu: Notepad App entry
-            env.send_msg(self.display_server_pid, MessagePayload::DrawRect { 
-                x: dock_x + 20, y: dock_y - 200, w: 40, h: 40, 
-                r: 0.8, g: 0.4, b: 0.6, a: 1.0,
-                radius: 8.0, shadow_blur: 5.0
-            });
-            env.send_msg(self.display_server_pid, MessagePayload::DrawCenteredText {
-                x: dock_x + 40, y: dock_y - 180,
-                text: "📝".to_string(),
-                font_size: 20.0, r: 1.0, g: 1.0, b: 1.0, a: 1.0
-            });
-            env.send_msg(self.display_server_pid, MessagePayload::DrawText { 
-                x: dock_x + 70, y: dock_y - 190, 
-                text: "Notepad".to_string(), 
-                font_size: 16.0, r: 0.9, g: 0.9, b: 0.9, a: 1.0 
-            });
+            let max_scroll = (filtered.len() as f32 * 50.0 - 300.0).max(0.0);
+            let clamped_scroll = self.start_menu_scroll.clamp(0.0, max_scroll);
 
-            // Start Menu: ImgView App entry
-            env.send_msg(self.display_server_pid, MessagePayload::DrawRect { 
-                x: dock_x + 20, y: dock_y - 150, w: 40, h: 40, 
-                r: 0.2, g: 0.6, b: 0.8, a: 1.0,
-                radius: 8.0, shadow_blur: 5.0
-            });
-            env.send_msg(self.display_server_pid, MessagePayload::DrawCenteredText {
-                x: dock_x + 40, y: dock_y - 130,
-                text: "🖼️".to_string(),
-                font_size: 20.0, r: 1.0, g: 1.0, b: 1.0, a: 1.0
-            });
-            env.send_msg(self.display_server_pid, MessagePayload::DrawText { 
-                x: dock_x + 70, y: dock_y - 140, 
-                text: "Image Viewer".to_string(), 
-                font_size: 16.0, r: 0.9, g: 0.9, b: 0.9, a: 1.0 
-            });
+            let mut y = dock_y as f32 - 320.0 - clamped_scroll;
+            for app in filtered {
+                if y > dock_y as f32 - 370.0 && y < dock_y as f32 - 20.0 {
+                    env.send_msg(self.display_server_pid, MessagePayload::DrawRect { 
+                        x: dock_x + 20, y: y as i32, w: 40, h: 40, 
+                        r: app.3.0, g: app.3.1, b: app.3.2, a: 1.0,
+                        radius: 8.0, shadow_blur: 5.0
+                    });
+                    env.send_msg(self.display_server_pid, MessagePayload::DrawCenteredText {
+                        x: dock_x + 40, y: y as i32 + 20,
+                        text: app.1.to_string(),
+                        font_size: 20.0, r: 1.0, g: 1.0, b: 1.0, a: 1.0
+                    });
+                    env.send_msg(self.display_server_pid, MessagePayload::DrawText { 
+                        x: dock_x + 70, y: y as i32 + 10, 
+                        text: app.2.to_string(), 
+                        font_size: 16.0, r: 0.9, g: 0.9, b: 0.9, a: 1.0 
+                    });
+                }
+                y += 50.0;
+            }
 
-            // Start Menu: Piano App entry
-            env.send_msg(self.display_server_pid, MessagePayload::DrawRect { 
-                x: dock_x + 20, y: dock_y - 100, w: 40, h: 40, 
-                r: 0.8, g: 0.3, b: 0.3, a: 1.0,
-                radius: 8.0, shadow_blur: 5.0
-            });
-            env.send_msg(self.display_server_pid, MessagePayload::DrawCenteredText {
-                x: dock_x + 40, y: dock_y - 80,
-                text: "🎹".to_string(),
-                font_size: 20.0, r: 1.0, g: 1.0, b: 1.0, a: 1.0
-            });
-            env.send_msg(self.display_server_pid, MessagePayload::DrawText { 
-                x: dock_x + 70, y: dock_y - 90, 
-                text: "Piano".to_string(), 
-                font_size: 16.0, r: 0.9, g: 0.9, b: 0.9, a: 1.0 
-            });
+            if max_scroll > 0.0 {
+                // scrollbar track
+                env.send_msg(self.display_server_pid, MessagePayload::DrawRect { 
+                    x: dock_x + 240, y: dock_y - 320, w: 4, h: 300, 
+                    r: 0.2, g: 0.2, b: 0.25, a: 1.0,
+                    radius: 2.0, shadow_blur: 0.0
+                });
+                
+                let view_ratio = 300.0 / (300.0 + max_scroll);
+                let thumb_h = (300.0 * view_ratio).max(20.0);
+                let thumb_y = (dock_y as f32 - 320.0) + (clamped_scroll / max_scroll) * (300.0 - thumb_h);
+                
+                env.send_msg(self.display_server_pid, MessagePayload::DrawRect { 
+                    x: dock_x + 240, y: thumb_y as i32, w: 4, h: thumb_h as i32, 
+                    r: 0.5, g: 0.5, b: 0.6, a: 1.0,
+                    radius: 2.0, shadow_blur: 0.0
+                });
+            }
         }
     }
 }
@@ -455,10 +442,34 @@ impl Process for WindowManager {
                     let dy = y - self.mouse_y;
                     self.mouse_x = x;
                     self.mouse_y = y;
-                    
-                    let title_h = 30;
 
-                    if let Some(active_win) = self.windows.last() {
+                    if self.start_menu_open && self.start_menu_scroll_dragging {
+                        let query = self.start_menu_search.to_lowercase();
+                        let all_apps = [
+                            ("terminal", "💻", "Terminal"),
+                            ("/bin/calc", "🖩", "Calculator"),
+                            ("/bin/fileman", "📁", "File Manager"),
+                            ("/bin/notepad", "📝", "Notepad"),
+                            ("/bin/imgview", "🖼️", "Image Viewer"),
+                            ("/bin/piano", "🎹", "Piano"),
+                            ("/bin/midiplayer", "🎵", "MIDI Player"),
+                        ];
+                        let mut filtered_len = 0;
+                        for app in all_apps.iter() {
+                            if app.2.to_lowercase().contains(&query) {
+                                filtered_len += 1;
+                            }
+                        }
+                        let max_scroll = (filtered_len as f32 * 50.0 - 300.0).max(0.0);
+                        if max_scroll > 0.0 {
+                            let track_h = 300.0;
+                            let bar_h = track_h * (track_h / (filtered_len as f32 * 50.0));
+                            let scroll_ratio_delta = dy as f32 / (track_h - bar_h);
+                            self.start_menu_scroll = (self.start_menu_scroll + scroll_ratio_delta * max_scroll).clamp(0.0, max_scroll);
+                            needs_redraw = true;
+                        }
+                    } else if let Some(active_win) = self.windows.last_mut() {
+                        let title_h = 30;
                         let rx = self.mouse_x - active_win.x;
                         let ry = self.mouse_y - (active_win.y + title_h);
                         // Forward if mouse is currently down (capture), or if it's within bounds
@@ -531,7 +542,6 @@ impl Process for WindowManager {
                 }
                 MessagePayload::MouseButton { down } => {
                     self.mouse_is_down = down;
-                    let mut needs_redraw = false;
                     if down {
                         let title_h = 30;
                         let mut clicked_idx = None;
@@ -555,38 +565,57 @@ impl Process for WindowManager {
                             if self.mouse_x >= dock_x && self.mouse_x <= dock_x + 250 && 
                                self.mouse_y >= dock_y - 370 && self.mouse_y <= dock_y - 20 {
                                 
-                                // Terminal click
-                                if self.mouse_y >= dock_y - 350 && self.mouse_y <= dock_y - 310 {
-                                    env.spawn_process("terminal");
-                                    self.start_menu_open = false;
+                                // Is it the search bar?
+                                if self.mouse_y >= dock_y - 360 && self.mouse_y <= dock_y - 330 {
+                                    // clicked search bar, do nothing, keep menu open
+                                    needs_redraw = true;
+                                    continue;
                                 }
-                                // Calculator click
-                                else if self.mouse_y >= dock_y - 300 && self.mouse_y <= dock_y - 260 {
-                                    env.spawn_process("/bin/calc");
-                                    self.start_menu_open = false;
+
+                                let all_apps = [
+                                    ("terminal", "💻", "Terminal"),
+                                    ("/bin/calc", "🖩", "Calculator"),
+                                    ("/bin/fileman", "📁", "File Manager"),
+                                    ("/bin/notepad", "📝", "Notepad"),
+                                    ("/bin/imgview", "🖼️", "Image Viewer"),
+                                    ("/bin/piano", "🎹", "Piano"),
+                                    ("/bin/midiplayer", "🎵", "MIDI Player"),
+                                ];
+
+                                let query = self.start_menu_search.to_lowercase();
+                                let mut filtered = Vec::new();
+                                for app in all_apps.iter() {
+                                    if app.2.to_lowercase().contains(&query) {
+                                        filtered.push(app);
+                                    }
                                 }
-                                // File Manager click
-                                else if self.mouse_y >= dock_y - 250 && self.mouse_y <= dock_y - 210 {
-                                    env.spawn_process("/bin/fileman");
-                                    self.start_menu_open = false;
+
+                                let click_y = self.mouse_y as f32;
+                                let mut y = dock_y as f32 - 320.0 - self.start_menu_scroll;
+                                let mut clicked_app = false;
+                                
+                                if self.mouse_x >= dock_x + 230 && self.mouse_x <= dock_x + 250 {
+                                    self.start_menu_scroll_dragging = true;
+                                    needs_redraw = true;
+                                    continue;
                                 }
-                                // Notepad click
-                                else if self.mouse_y >= dock_y - 200 && self.mouse_y <= dock_y - 160 {
-                                    env.spawn_process("/bin/notepad");
-                                    self.start_menu_open = false;
-                                }
-                                // ImgView click
-                                else if self.mouse_y >= dock_y - 150 && self.mouse_y <= dock_y - 110 {
-                                    env.spawn_process("/bin/imgview");
-                                    self.start_menu_open = false;
-                                }
-                                // Piano click
-                                else if self.mouse_y >= dock_y - 100 && self.mouse_y <= dock_y - 60 {
-                                    env.spawn_process("/bin/piano");
-                                    self.start_menu_open = false;
+
+                                if self.mouse_x < dock_x + 230 {
+                                    for app in filtered {
+                                        if y > dock_y as f32 - 370.0 && y < dock_y as f32 - 20.0 {
+                                            if click_y >= y && click_y <= y + 40.0 {
+                                                env.spawn_process(app.0);
+                                                clicked_app = true;
+                                                break;
+                                            }
+                                        }
+                                        y += 50.0;
+                                    }
                                 }
                                 
-                                self.start_menu_open = false;
+                                if clicked_app || self.mouse_x < dock_x + 230 {
+                                    self.start_menu_open = false;
+                                }
                                 needs_redraw = true;
                                 continue;
                             } else if self.mouse_y < self.screen_h - dock_h {
@@ -732,6 +761,7 @@ impl Process for WindowManager {
                         self.drag_window_index = None;
                         self.resize_window_index = None;
                         self.resize_edge = ResizeEdge::None;
+                        self.start_menu_scroll_dragging = false;
                         
                         // Forward mouse up to active window (always forward, not just in-bounds,
                         // because the app may be in a drag state that needs to be released)
@@ -749,7 +779,15 @@ impl Process for WindowManager {
                     }
                 }
                 MessagePayload::KeyPress { key_code } => {
-                    if let Some(active_win) = self.windows.last_mut() {
+                    if self.start_menu_open {
+                        if key_code == 8 {
+                            self.start_menu_search.pop();
+                            needs_redraw = true;
+                        } else if key_code >= 32 && key_code <= 126 {
+                            self.start_menu_search.push(key_code as u8 as char);
+                            needs_redraw = true;
+                        }
+                    } else if let Some(active_win) = self.windows.last_mut() {
                         if active_win.owner == 0 {
                             let redraw = unsafe { gui_app_key_down_js(active_win.id, key_code) };
                             if redraw != 0 {
@@ -785,6 +823,16 @@ impl Process for WindowManager {
                             } else {
                                 env.send_msg(active_win.owner, MessagePayload::KeyPress { key_code });
                             }
+                        }
+                    }
+                }
+                MessagePayload::MouseWheel { delta_y } => {
+                    if self.start_menu_open {
+                        self.start_menu_scroll += delta_y;
+                        needs_redraw = true;
+                    } else if let Some(active_win) = self.windows.last_mut() {
+                        if active_win.owner != 0 {
+                            env.send_msg(active_win.owner, MessagePayload::MouseWheel { delta_y });
                         }
                     }
                 }

@@ -38,6 +38,7 @@ unsafe extern "C" {
     fn sys_timezone_offset_ms() -> i64;
     fn sys_fetch(url_ptr: *const u8, url_len: usize, out_ptr: *mut u8, out_max_len: usize) -> i32;
     fn sys_play_tone(freq: f32, duration_ms: u32, wave_type: u32);
+    fn sys_schedule_note(freq: f32, duration_ms: u32, wave_type: u32, volume: f32, delay_ms: u32);
 }
 
 pub fn call_sys_time_ms() -> u64 {
@@ -54,6 +55,10 @@ pub fn call_sys_fetch(url_ptr: *const u8, url_len: usize, out_ptr: *mut u8, out_
 
 pub fn call_sys_play_tone(freq: f32, duration_ms: u32, wave_type: u32) {
     unsafe { sys_play_tone(freq, duration_ms, wave_type) }
+}
+
+pub fn call_sys_schedule_note(freq: f32, duration_ms: u32, wave_type: u32, volume: f32, delay_ms: u32) {
+    unsafe { sys_schedule_note(freq, duration_ms, wave_type, volume, delay_ms) }
 }
 
 pub fn call_sys_execve(args_buf: &[u8], cwd: &str, stdin: Option<&str>, stdout: Option<&str>, terminal_id: u32) -> i32 {

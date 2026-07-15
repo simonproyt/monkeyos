@@ -322,9 +322,10 @@ async function bootstrap() {
     let vfs = {
         "/": { type: "dir", children: ["home", "etc", "usr", "var", "tmp"], timestamp: Date.now() },
         "/home": { type: "dir", children: ["monkey"], timestamp: Date.now() },
-        "/home/monkey": { type: "dir", children: ["readme.txt", "demo.jpg"], timestamp: Date.now() },
+        "/home/monkey": { type: "dir", children: ["readme.txt", "demo.jpg", "demo.mid"], timestamp: Date.now() },
         "/home/monkey/readme.txt": { type: "file", content: "Hello from MonkeyOS!\n", timestamp: Date.now() },
         "/home/monkey/demo.jpg": { type: "file", content: "data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 300'%3E%3Crect width='400' height='300' fill='%231a1a24'/%3E%3Ccircle cx='200' cy='150' r='80' fill='%23ff5555'/%3E%3Ctext x='200' y='160' font-family='sans-serif' font-size='24' fill='white' text-anchor='middle'%3EMonkeyOS%3C/text%3E%3C/svg%3E", timestamp: Date.now() },
+        "/home/monkey/demo.mid": { type: "file", content: "data:audio/midi;base64,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", timestamp: Date.now() },
         "/etc": { type: "dir", children: ["os-release", "passwd"], timestamp: Date.now() },
         "/etc/os-release": { type: "file", content: "NAME=MonkeyOS\nVERSION=0.1.0\n", timestamp: Date.now() },
         "/etc/passwd": { type: "file", content: "root:x:0:0:root:/root:/bin/sh\n", timestamp: Date.now() },
@@ -366,7 +367,7 @@ async function bootstrap() {
         let shouldSaveVfs = false;
         
         // Preload binaries
-        const binaries = ['hello.wasm', 'coreutils.wasm', 'sh.wasm', 'edit.wasm', 'beep.wasm', 'fetch.wasm', 'imgview.wasm', 'calc.wasm', 'fileman.wasm', 'notepad.wasm', 'piano.wasm'];
+        const binaries = ['hello.wasm', 'coreutils.wasm', 'sh.wasm', 'edit.wasm', 'beep.wasm', 'fetch.wasm', 'imgview.wasm', 'calc.wasm', 'fileman.wasm', 'notepad.wasm', 'piano.wasm', 'midiplayer.wasm'];
         
         function getBinaryFromDB(db, name) {
             return new Promise((resolve) => {
@@ -1255,7 +1256,7 @@ async function bootstrap() {
                 return -1;
             }
         },
-        sys_play_tone: (freq, duration_ms, wave_type) => {
+        sys_schedule_note: (freq, duration_ms, wave_type, volume, delay_ms) => {
             const printToTerm = (str) => {
                 const termId = window.__WASI_PROXY && window.__WASI_PROXY.current_terminal_id;
                 const kernelPtr = window.__WASI_PROXY && window.__WASI_PROXY.kernelPtr;
@@ -1269,7 +1270,6 @@ async function bootstrap() {
                 console.log(str);
             };
 
-            // Ensure AudioContext exists
             if (!window.audioCtx) {
                 try {
                     window.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -1289,21 +1289,26 @@ async function bootstrap() {
                     osc.type = waveTypes[(wave_type >>> 0) % 4] || 'sine';
                     osc.frequency.value = freq || 440;
 
-                    // Direct gain value — no fancy automation
-                    gainNode.gain.value = 0.5;
-
                     osc.connect(gainNode);
                     gainNode.connect(ctx.destination);
 
-                    const dur = Math.max(0.1, (duration_ms || 200) / 1000.0);
+                    const dur = Math.max(0.01, (duration_ms || 200) / 1000.0);
+                    const t0 = ctx.currentTime + (delay_ms / 1000.0);
+                    const vol = Math.max(0, Math.min(volume, 1.0));
+
+                    // ADSR Envelope
+                    const attack = 0.01;
+                    const release = 0.05;
                     
-                    const t0 = ctx.currentTime;
-                    osc.start(t0); // start exactly at currentTime
+                    gainNode.gain.setValueAtTime(0, t0);
+                    gainNode.gain.linearRampToValueAtTime(vol, t0 + attack);
+                    gainNode.gain.setValueAtTime(vol, t0 + dur - release);
+                    gainNode.gain.linearRampToValueAtTime(0, t0 + dur);
+
+                    osc.start(t0);
                     osc.stop(t0 + dur);
-                    
-                    printToTerm(`[MonkeyOS Audio] Played freq=${freq}Hz, dur=${duration_ms}ms, wave=${osc.type}, state=${ctx.state}`);
                 } catch (e) {
-                    printToTerm(`[MonkeyOS Audio] Error playing tone: ${e.message}`);
+                    printToTerm(`[MonkeyOS Audio] Error playing note: ${e.message}`);
                 }
             };
 
@@ -1312,6 +1317,13 @@ async function bootstrap() {
             } else {
                 doPlay();
             }
+        },
+        sys_play_tone: (freq, duration_ms, wave_type) => {
+            if (window.__WASI_PROXY && window.__WASI_PROXY.wasm && window.__WASI_PROXY.wasm.exports.sys_schedule_note) {
+                 // Forward to new implementation
+            }
+            // Just use sys_schedule_note
+            window.__WASI_PROXY.wasm.imports.env.sys_schedule_note(freq, duration_ms, wave_type, 0.5, 0);
         },
         wasi_print_js: (id, ptr, len) => {
             const wasm = window.__WASI_PROXY.wasm || wasmInstance;
@@ -1685,6 +1697,7 @@ async function bootstrap() {
         tick: () => exports.kernel_tick(kernelPtr),
         push_mouse_move: (x, y) => exports.kernel_push_mouse_move(kernelPtr, x, y),
         push_mouse_button: (down) => exports.kernel_push_mouse_button(kernelPtr, down),
+        push_mouse_wheel: (delta_y) => exports.kernel_push_mouse_wheel(kernelPtr, delta_y),
         push_key_event: (code) => exports.kernel_push_key_event(kernelPtr, code),
         push_screen_size: (w, h) => {
             if (exports.kernel_push_screen_size) {
@@ -1749,6 +1762,7 @@ async function bootstrap() {
         if (e.button === 0) kernel.push_mouse_button(true); 
     });
     window.addEventListener('mouseup', (e) => { if (e.button === 0) kernel.push_mouse_button(false); });
+    window.addEventListener('wheel', (e) => { kernel.push_mouse_wheel(e.deltaY); }, { passive: true });
     window.addEventListener('keydown', (e) => {
         initAudio();
         if (e.ctrlKey) {

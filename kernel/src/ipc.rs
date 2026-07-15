@@ -9,6 +9,7 @@ pub enum MessagePayload {
     ScreenSizeChanged { w: i32, h: i32 },
     MouseMove { x: i32, y: i32 },
     MouseButton { down: bool },
+    MouseWheel { delta_y: f32 },
     KeyPress { key_code: u32 },
     UpdateTerminalBuffer { id: u32, lines: Vec<String>, is_pager: bool, pager_title: Option<String>, scroll_y: usize },
     WasiPrintChar { id: u32, c: u8 },

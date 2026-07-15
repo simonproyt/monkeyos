@@ -9,7 +9,7 @@ members = [
     "apps/calc",
     "apps/fileman",
     "apps/notepad"
-, "apps/beep", "apps/imgview", "apps/fetch", "apps/piano"]
+, "apps/beep", "apps/imgview", "apps/fetch", "apps/piano", "apps/midiplayer"]
 resolver = "2"
 
 [profile.release]

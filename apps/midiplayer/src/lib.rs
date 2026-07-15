@@ -1,0 +1,219 @@
+#![allow(static_mut_refs)]
+
+use libui::{window::Window, Button, Widget, picker::FilePicker};
+use midly::{Smf, TrackEventKind, MidiMessage};
+
+#[link(wasm_import_module = "env")]
+unsafe extern "C" {
+    fn sys_get_launch_arg(out_ptr: *mut u8, out_max_len: usize) -> usize;
+    fn sys_fetch(url_ptr: *const u8, url_len: usize, out_ptr: *mut u8, out_max_len: usize) -> i32;
+    fn sys_schedule_note(freq: f32, duration_ms: u32, wave_type: u32, volume: f32, delay_ms: u32);
+}
+
+fn get_launch_arg() -> Option<String> {
+    let mut buf = [0u8; 512];
+    let len = unsafe { sys_get_launch_arg(buf.as_mut_ptr(), buf.len()) };
+    if len > 0 {
+        Some(String::from_utf8_lossy(&buf[..len]).to_string())
+    } else {
+        None
+    }
+}
+
+fn fetch_file(path: &str) -> Option<Vec<u8>> {
+    let url_bytes = path.as_bytes();
+    // Assuming MIDI files won't exceed 1MB for this simple app
+    let mut buf = vec![0u8; 1024 * 1024]; 
+    let len = unsafe { sys_fetch(url_bytes.as_ptr(), url_bytes.len(), buf.as_mut_ptr(), buf.len()) };
+    if len > 0 {
+        buf.truncate(len as usize);
+        Some(buf)
+    } else {
+        None
+    }
+}
+
+struct MidiPlayer {
+    win: Window,
+    btn_open: Button,
+    btn_play: Button,
+    picker: FilePicker,
+    midi_data: Option<Vec<u8>>,
+    status_text: String,
+}
+
+static mut APP: Option<MidiPlayer> = None;
+
+#[no_mangle]
+pub extern "C" fn init() {
+    unsafe {
+        let mut app = MidiPlayer {
+            win: Window::new("MIDI Player", 50, 50, 450, 350),
+            btn_open: Button::new("🎵 Open MIDI", 140, 30),
+            btn_play: Button::new("▶️ Play", 100, 30),
+            picker: FilePicker::new(),
+            midi_data: None,
+            status_text: "Ready.".to_string(),
+        };
+
+        if let Some(path) = get_launch_arg() {
+            if let Some(data) = fetch_file(&path) {
+                app.midi_data = Some(data);
+                app.status_text = format!("Loaded: {}", path);
+            }
+        }
+
+        APP = Some(app);
+    }
+}
+
+fn play_midi(data: &[u8]) {
+    let smf = match Smf::parse(data) {
+        Ok(smf) => smf,
+        Err(_) => return,
+    };
+    // VERY simplified playback for format 0 / single track format 1
+    // A proper player needs to merge tracks and convert ticks to MS based on tempo.
+    // Assuming 1 tick = 2ms for a very basic test.
+    let ms_per_tick = 2; 
+
+    // We'll schedule notes from all tracks
+    for track in smf.tracks.iter() {
+        let mut current_time_ms = 0;
+        for ev in track.iter() {
+            current_time_ms += ev.delta.as_int() * ms_per_tick;
+            if let TrackEventKind::Midi { message, .. } = ev.kind {
+                match message {
+                    MidiMessage::NoteOn { key, vel } => {
+                        if vel > 0 {
+                            // Convert MIDI key to frequency
+                            let freq = 440.0 * 2.0_f32.powf((key.as_int() as f32 - 69.0) / 12.0);
+                            let volume = (vel.as_int() as f32) / 127.0;
+                            unsafe {
+                                // Default square wave (1) for chiptune style
+                                sys_schedule_note(freq, 200, 1, volume, current_time_ms);
+                            }
+                        }
+                    },
+                    _ => {}
+                }
+            }
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn tick(x: i32, y: i32, w: i32, h: i32) {
+    unsafe {
+        if let Some(app) = &mut APP {
+            app.win.x = x;
+            app.win.y = y;
+            app.win.w = w;
+            app.win.h = h;
+            
+            app.win.draw_background(0.1, 0.1, 0.15);
+            
+            // Draw top bar
+            libui::draw_rect_js(app.win.x as f32, app.win.y as f32, app.win.w as f32, 40.0, 0.15, 0.15, 0.2, 1.0, 0.0, 0.0);
+            app.btn_open.draw(app.win.x + 10, app.win.y + 5);
+            if app.midi_data.is_some() {
+                app.btn_play.draw(app.win.x + 160, app.win.y + 5);
+            }
+
+            libui::draw_text_js(app.win.x as f32 + 20.0, app.win.y as f32 + 80.0, app.status_text.as_ptr(), app.status_text.len(), 16.0, 0.8, 0.8, 0.8, 1.0);
+            
+            if app.picker.is_open {
+                app.picker.draw(app.win.x + 20, app.win.y + 20);
+            }
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn handle_mouse_move(mx: i32, my: i32) -> i32 {
+    unsafe {
+        if let Some(app) = &mut APP {
+            let mut redraw = false;
+            let win_x = app.win.x;
+            let win_y = app.win.y;
+            
+            if app.picker.is_open {
+                redraw |= app.picker.handle_mouse_move(mx, my, win_x + 20, win_y + 20);
+            } else {
+                redraw |= app.btn_open.handle_mouse_move(mx, my, win_x + 10, win_y + 5);
+                if app.midi_data.is_some() {
+                    redraw |= app.btn_play.handle_mouse_move(mx, my, win_x + 160, win_y + 5);
+                }
+            }
+            if redraw { return 1; }
+        }
+    }
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn handle_mouse_down(mx: i32, my: i32) -> i32 {
+    unsafe {
+        if let Some(app) = &mut APP {
+            let mut redraw = false;
+            let win_x = app.win.x;
+            let win_y = app.win.y;
+            
+            if app.picker.is_open {
+                redraw |= app.picker.handle_mouse_down(mx, my, win_x + 20, win_y + 20);
+            } else {
+                redraw |= app.btn_open.handle_mouse_down(mx, my, win_x + 10, win_y + 5);
+                if app.midi_data.is_some() {
+                    redraw |= app.btn_play.handle_mouse_down(mx, my, win_x + 160, win_y + 5);
+                }
+            }
+            if redraw { return 1; }
+        }
+    }
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn handle_mouse_up(mx: i32, my: i32) -> i32 {
+    unsafe {
+        if let Some(app) = &mut APP {
+            let mut redraw = false;
+            let win_x = app.win.x;
+            let win_y = app.win.y;
+            
+            if app.picker.is_open {
+                redraw |= app.picker.handle_mouse_up(mx, my, win_x + 20, win_y + 20);
+                if let Some(path) = app.picker.selected_path.take() {
+                    if let Some(data) = fetch_file(&path) {
+                        app.midi_data = Some(data);
+                        app.status_text = format!("Loaded: {}", path);
+                        redraw = true;
+                    }
+                }
+            } else {
+                if app.btn_open.is_pressed {
+                    let inside = mx >= win_x + 10 && mx <= win_x + 10 + app.btn_open.w && 
+                                 my >= win_y + 5 && my <= win_y + 5 + app.btn_open.h;
+                    app.btn_open.is_pressed = false;
+                    redraw = true;
+                    if inside {
+                        app.picker.open();
+                    }
+                }
+                if app.btn_play.is_pressed {
+                    let inside = mx >= win_x + 160 && mx <= win_x + 160 + app.btn_play.w && 
+                                 my >= win_y + 5 && my <= win_y + 5 + app.btn_play.h;
+                    app.btn_play.is_pressed = false;
+                    redraw = true;
+                    if inside {
+                        if let Some(data) = &app.midi_data {
+                            play_midi(data);
+                        }
+                    }
+                }
+            }
+            if redraw { return 1; }
+        }
+    }
+    0
+}
