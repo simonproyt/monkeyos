@@ -1305,7 +1305,7 @@ async function bootstrap() {
             
             if (!window.analyser) {
                 window.analyser = window.audioCtx.createAnalyser();
-                window.analyser.fftSize = 64; // Gives 32 bins
+                window.analyser.fftSize = 256; // 128 bins total
                 window.analyser.connect(window.audioCtx.destination);
             }
             const ctx = window.audioCtx;

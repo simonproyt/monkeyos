@@ -44,6 +44,7 @@ struct MidiPlayer {
     status_text: String,
     is_playing: bool,
     frame: u64,
+    smoothed_levels: [f32; 32],
 }
 
 static mut APP: Option<MidiPlayer> = None;
@@ -60,6 +61,7 @@ pub extern "C" fn init() {
             status_text: "Ready.".to_string(),
             is_playing: false,
             frame: 0,
+            smoothed_levels: [0.0; 32],
         };
 
         if let Some(path) = get_launch_arg() {
@@ -128,31 +130,48 @@ pub extern "C" fn tick(x: i32, y: i32, w: i32, h: i32) {
 
             // Audio Visualizer (Real Analyzer)
             app.frame = app.frame.wrapping_add(1);
-            let mut levels = [0u8; 12];
+            let mut levels = [0u8; 32];
             unsafe { sys_get_audio_levels(levels.as_mut_ptr(), levels.len()) };
 
-            let bar_w = 16.0;
-            let spacing = 8.0;
-            let base_x = app.win.x as f32 + 80.0;
-            let base_y = app.win.y as f32 + 250.0;
+            let num_bars = 32;
+            let bar_w = 8.0;
+            let spacing = 3.0;
+            let total_w = num_bars as f32 * (bar_w + spacing);
+            let base_x = app.win.x as f32 + (app.win.w as f32 - total_w) / 2.0;
+            let base_y = app.win.y as f32 + 250.0; // Moved down
             
             for (i, &level) in levels.iter().enumerate() {
-                let mut h = (level as f32) / 2.0; 
-                if h < 5.0 { h = 5.0; } // Resting height
+                // Smooth the level
+                let target = level as f32;
+                app.smoothed_levels[i] += (target - app.smoothed_levels[i]) * 0.3; // Easing factor
                 
-                // Dynamic colors based on height
-                let r = (h / 80.0).clamp(0.2, 1.0);
-                let g = (1.0 - (h / 120.0)).clamp(0.2, 0.8);
+                let mut h = app.smoothed_levels[i] * 0.5; 
+                if h < 4.0 { h = 4.0; } 
                 
+                // Neon Cyberpunk colors
+                let intensity = h / 150.0;
+                let r = (0.2 + intensity * 0.8).clamp(0.2, 1.0);
+                let g = (0.1 + intensity * 0.3).clamp(0.1, 0.6);
+                let b = (0.9 - intensity * 0.5).clamp(0.2, 1.0);
+                
+                let x = base_x + (i as f32 * (bar_w + spacing));
+                
+                // Main upward bar (Glowing)
                 libui::draw_rect_js(
-                    base_x + (i as f32 * (bar_w + spacing)), 
-                    base_y - h, 
+                    x, base_y - h, 
                     bar_w, h, 
-                    r, g, 0.5, 1.0, 4.0, 2.0
+                    r, g, b, 1.0, 4.0, 15.0 // heavy glow
+                );
+                
+                // Downward reflection (Faded, no shadow blur)
+                libui::draw_rect_js(
+                    x, base_y + 2.0, 
+                    bar_w, h * 0.4, 
+                    r, g, b, 0.3, 4.0, 0.0 
                 );
             }
 
-            libui::draw_text_js(app.win.x as f32 + 20.0, app.win.y as f32 + 80.0, app.status_text.as_ptr(), app.status_text.len(), 16.0, 0.8, 0.8, 0.8, 1.0);
+            libui::draw_text_js(app.win.x as f32 + 20.0, app.win.y as f32 + 65.0, app.status_text.as_ptr(), app.status_text.len(), 14.0, 0.8, 0.8, 0.8, 1.0);
             
             if app.picker.is_open {
                 app.picker.draw(app.win.x + 20, app.win.y + 20);
