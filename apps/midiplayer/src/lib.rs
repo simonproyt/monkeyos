@@ -9,6 +9,7 @@ unsafe extern "C" {
     fn sys_fetch(url_ptr: *const u8, url_len: usize, out_ptr: *mut u8, out_max_len: usize) -> i32;
     fn sys_schedule_note(freq: f32, duration_ms: u32, wave_type: u32, volume: f32, delay_ms: u32);
     fn sys_stop_audio();
+    fn sys_get_audio_levels(out_ptr: *mut u8, max_len: usize) -> usize;
 }
 
 fn get_launch_arg() -> Option<String> {
@@ -125,28 +126,29 @@ pub extern "C" fn tick(x: i32, y: i32, w: i32, h: i32) {
                 app.btn_play.draw(app.win.x + 160, app.win.y + 5);
             }
 
-            // Audio Visualizer (Fake/Bouncing Bars)
+            // Audio Visualizer (Real Analyzer)
             app.frame = app.frame.wrapping_add(1);
-            let bar_w = 20.0;
-            let spacing = 10.0;
+            let mut levels = [0u8; 12];
+            unsafe { sys_get_audio_levels(levels.as_mut_ptr(), levels.len()) };
+
+            let bar_w = 16.0;
+            let spacing = 8.0;
             let base_x = app.win.x as f32 + 80.0;
             let base_y = app.win.y as f32 + 250.0;
-            let step = app.frame / 4; // Update every 4 frames
             
-            for i in 0..10 {
-                let h = if app.is_playing {
-                    let mut seed = step.wrapping_add(i * 13);
-                    seed = (seed ^ (seed << 3)) ^ (seed >> 1);
-                    ((seed % 20) * 4) as f32 + 10.0
-                } else {
-                    5.0 // Resting height
-                };
+            for (i, &level) in levels.iter().enumerate() {
+                let mut h = (level as f32) / 2.0; 
+                if h < 5.0 { h = 5.0; } // Resting height
+                
+                // Dynamic colors based on height
+                let r = (h / 80.0).clamp(0.2, 1.0);
+                let g = (1.0 - (h / 120.0)).clamp(0.2, 0.8);
                 
                 libui::draw_rect_js(
                     base_x + (i as f32 * (bar_w + spacing)), 
                     base_y - h, 
                     bar_w, h, 
-                    0.2, 0.8, 0.5, 1.0, 4.0, 2.0
+                    r, g, 0.5, 1.0, 4.0, 2.0
                 );
             }
 

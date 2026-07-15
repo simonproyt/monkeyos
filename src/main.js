@@ -1302,7 +1302,14 @@ async function bootstrap() {
                     return;
                 }
             }
+            
+            if (!window.analyser) {
+                window.analyser = window.audioCtx.createAnalyser();
+                window.analyser.fftSize = 64; // Gives 32 bins
+                window.analyser.connect(window.audioCtx.destination);
+            }
             const ctx = window.audioCtx;
+            const analyser = window.analyser;
             
             const doPlay = () => {
                 try {
@@ -1314,7 +1321,11 @@ async function bootstrap() {
                     osc.frequency.value = freq || 440;
 
                     osc.connect(gainNode);
-                    gainNode.connect(ctx.destination);
+                    if (analyser) {
+                        gainNode.connect(analyser);
+                    } else {
+                        gainNode.connect(ctx.destination);
+                    }
 
                     const dur = Math.max(0.01, (duration_ms || 200) / 1000.0);
                     const t0 = ctx.currentTime + (delay_ms / 1000.0);
@@ -1346,7 +1357,18 @@ async function bootstrap() {
             if (window.audioCtx) {
                 window.audioCtx.close();
                 window.audioCtx = null;
+                window.analyser = null;
             }
+        },
+        sys_get_audio_levels: (out_ptr, max_len) => {
+            if (!window.audioCtx || !window.analyser) return 0;
+            const data = new Uint8Array(window.analyser.frequencyBinCount);
+            window.analyser.getByteFrequencyData(data);
+            const len = Math.min(max_len, data.length);
+            const wasm = window.__WASI_PROXY.wasm || wasmInstance;
+            const memory = new Uint8Array(wasm.exports.memory.buffer);
+            memory.set(data.subarray(0, len), out_ptr);
+            return len;
         },
         sys_play_tone: (freq, duration_ms, wave_type) => {
             env.sys_schedule_note(freq, duration_ms, wave_type, 0.5, 0);
