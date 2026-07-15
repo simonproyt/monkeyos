@@ -279,6 +279,7 @@ pub unsafe extern "C" fn kernel_create_window(kernel: *mut Kernel, x: i32, y: i3
         3 => "Notepad".to_string(),
         4 => "Image Viewer".to_string(),
         5 => "Piano".to_string(),
+        6 => "MIDI Player".to_string(),
         _ => "App".to_string(),
     };
     

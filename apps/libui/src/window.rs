@@ -20,7 +20,8 @@ impl Window {
             "Notepad" => 3,
             "Image Viewer" => 4,
             "Piano" => 5,
-            _ => 6,
+            "MIDI Player" => 6,
+            _ => 7,
         };
         let id = unsafe { sys_create_window(x, y, w, h, app_type) };
         Self {

@@ -42,6 +42,7 @@ struct MidiPlayer {
     midi_data: Option<Vec<u8>>,
     status_text: String,
     is_playing: bool,
+    frame: u64,
 }
 
 static mut APP: Option<MidiPlayer> = None;
@@ -57,6 +58,7 @@ pub extern "C" fn init() {
             midi_data: None,
             status_text: "Ready.".to_string(),
             is_playing: false,
+            frame: 0,
         };
 
         if let Some(path) = get_launch_arg() {
@@ -121,6 +123,31 @@ pub extern "C" fn tick(x: i32, y: i32, w: i32, h: i32) {
             app.btn_open.draw(app.win.x + 10, app.win.y + 5);
             if app.midi_data.is_some() {
                 app.btn_play.draw(app.win.x + 160, app.win.y + 5);
+            }
+
+            // Audio Visualizer (Fake/Bouncing Bars)
+            app.frame = app.frame.wrapping_add(1);
+            let bar_w = 20.0;
+            let spacing = 10.0;
+            let base_x = app.win.x as f32 + 80.0;
+            let base_y = app.win.y as f32 + 250.0;
+            let step = app.frame / 4; // Update every 4 frames
+            
+            for i in 0..10 {
+                let h = if app.is_playing {
+                    let mut seed = step.wrapping_add(i * 13);
+                    seed = (seed ^ (seed << 3)) ^ (seed >> 1);
+                    ((seed % 20) * 4) as f32 + 10.0
+                } else {
+                    5.0 // Resting height
+                };
+                
+                libui::draw_rect_js(
+                    base_x + (i as f32 * (bar_w + spacing)), 
+                    base_y - h, 
+                    bar_w, h, 
+                    0.2, 0.8, 0.5, 1.0, 4.0, 2.0
+                );
             }
 
             libui::draw_text_js(app.win.x as f32 + 20.0, app.win.y as f32 + 80.0, app.status_text.as_ptr(), app.status_text.len(), 16.0, 0.8, 0.8, 0.8, 1.0);
