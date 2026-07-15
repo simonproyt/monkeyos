@@ -1342,6 +1342,12 @@ async function bootstrap() {
                 doPlay();
             }
         },
+        sys_stop_audio: () => {
+            if (window.audioCtx) {
+                window.audioCtx.close();
+                window.audioCtx = null;
+            }
+        },
         sys_play_tone: (freq, duration_ms, wave_type) => {
             if (window.__WASI_PROXY && window.__WASI_PROXY.wasm && window.__WASI_PROXY.wasm.exports.sys_schedule_note) {
                  // Forward to new implementation

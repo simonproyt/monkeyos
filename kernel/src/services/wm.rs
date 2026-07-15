@@ -715,6 +715,7 @@ impl Process for WindowManager {
                         if let Some(idx) = clicked_idx {
                             if clicked_action == 1 {
                                 let win = &self.windows[idx];
+                                crate::wasi::call_sys_stop_audio();
                                 env.send_msg(win.owner, MessagePayload::WindowClosed { id: win.id });
                                 self.windows.remove(idx);
                             } else if clicked_action == 2 { // Maximize
