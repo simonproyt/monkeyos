@@ -8,6 +8,7 @@ unsafe extern "C" {
     fn sys_get_launch_arg(out_ptr: *mut u8, out_max_len: usize) -> usize;
     fn sys_fetch(url_ptr: *const u8, url_len: usize, out_ptr: *mut u8, out_max_len: usize) -> i32;
     fn sys_schedule_note(freq: f32, duration_ms: u32, wave_type: u32, volume: f32, delay_ms: u32);
+    fn sys_stop_audio();
 }
 
 fn get_launch_arg() -> Option<String> {
@@ -40,6 +41,7 @@ struct MidiPlayer {
     picker: FilePicker,
     midi_data: Option<Vec<u8>>,
     status_text: String,
+    is_playing: bool,
 }
 
 static mut APP: Option<MidiPlayer> = None;
@@ -54,6 +56,7 @@ pub extern "C" fn init() {
             picker: FilePicker::new(),
             midi_data: None,
             status_text: "Ready.".to_string(),
+            is_playing: false,
         };
 
         if let Some(path) = get_launch_arg() {
@@ -187,6 +190,9 @@ pub extern "C" fn handle_mouse_up(mx: i32, my: i32) -> i32 {
                     if let Some(data) = fetch_file(&path) {
                         app.midi_data = Some(data);
                         app.status_text = format!("Loaded: {}", path);
+                        app.is_playing = false;
+                        app.btn_play.text = "▶️ Play".to_string();
+                        unsafe { sys_stop_audio(); }
                         redraw = true;
                     }
                 }
@@ -206,8 +212,16 @@ pub extern "C" fn handle_mouse_up(mx: i32, my: i32) -> i32 {
                     app.btn_play.is_pressed = false;
                     redraw = true;
                     if inside {
-                        if let Some(data) = &app.midi_data {
-                            play_midi(data);
+                        if app.is_playing {
+                            unsafe { sys_stop_audio(); }
+                            app.btn_play.text = "▶️ Play".to_string();
+                            app.is_playing = false;
+                        } else {
+                            if let Some(data) = &app.midi_data {
+                                play_midi(data);
+                                app.btn_play.text = "⏹️ Stop".to_string();
+                                app.is_playing = true;
+                            }
                         }
                     }
                 }

@@ -1349,11 +1349,7 @@ async function bootstrap() {
             }
         },
         sys_play_tone: (freq, duration_ms, wave_type) => {
-            if (window.__WASI_PROXY && window.__WASI_PROXY.wasm && window.__WASI_PROXY.wasm.exports.sys_schedule_note) {
-                 // Forward to new implementation
-            }
-            // Just use sys_schedule_note
-            window.__WASI_PROXY.wasm.imports.env.sys_schedule_note(freq, duration_ms, wave_type, 0.5, 0);
+            env.sys_schedule_note(freq, duration_ms, wave_type, 0.5, 0);
         },
         wasi_print_js: (id, ptr, len) => {
             const wasm = window.__WASI_PROXY.wasm || wasmInstance;

@@ -265,6 +265,8 @@ impl WindowManager {
                 (0.8, 0.4, 0.8, "🖼️")
             } else if w.title == "Piano" {
                 (0.8, 0.3, 0.3, "🎹")
+            } else if w.title == "MIDI Player" {
+                (0.9, 0.6, 0.2, "🎵")
             } else {
                 (0.5, 0.5, 0.5, "❓")
             };
