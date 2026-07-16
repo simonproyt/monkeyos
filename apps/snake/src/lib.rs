@@ -18,7 +18,10 @@ const OFFSET_Y: i32 = 40;
 enum Direction { Up, Down, Left, Right }
 
 #[derive(Clone, Copy, PartialEq)]
-enum FoodType { Normal, Golden, Poison }
+enum FoodType { Normal, Golden, Poison, Dynamite }
+
+#[derive(PartialEq)]
+enum GameState { MainMenu, Playing, GameOver }
 
 struct Particle {
     x: f32, y: f32, vx: f32, vy: f32,
@@ -28,6 +31,7 @@ struct Particle {
 
 struct SnakeGame {
     win: Window,
+    state: GameState,
     snake: Vec<(i32, i32)>,
     dir: Direction,
     next_dir: Direction,
@@ -35,12 +39,14 @@ struct SnakeGame {
     food_type: FoodType,
     score: u32,
     highscore: u32,
-    game_over: bool,
     frame_count: u32,
     speed: u32,
+    sprinting: bool,
+    wrapping: bool,
     obstacles: Vec<(i32, i32)>,
     particles: Vec<Particle>,
     glow_ticks: u32,
+    level: u32,
 }
 
 static mut APP: Option<SnakeGame> = None;
@@ -75,8 +81,9 @@ fn spawn_food(snake: &[(i32, i32)], obstacles: &[(i32, i32)]) -> ((i32, i32), Fo
         let fy = rand_range(0, GRID_H);
         if !is_occupied(fx, fy, snake, obstacles) {
             let r = rand_range(0, 100);
-            let ftype = if r < 10 { FoodType::Golden }
-                        else if r < 20 { FoodType::Poison }
+            let ftype = if r < 5 { FoodType::Dynamite }
+                        else if r < 15 { FoodType::Golden }
+                        else if r < 25 { FoodType::Poison }
                         else { FoodType::Normal };
             return ((fx, fy), ftype);
         }
@@ -85,8 +92,8 @@ fn spawn_food(snake: &[(i32, i32)], obstacles: &[(i32, i32)]) -> ((i32, i32), Fo
 
 fn spawn_obstacle(snake: &[(i32, i32)], obstacles: &[(i32, i32)], food: (i32, i32)) -> Option<(i32, i32)> {
     for _ in 0..50 {
-        let ox = rand_range(2, GRID_W - 2);
-        let oy = rand_range(2, GRID_H - 2);
+        let ox = rand_range(1, GRID_W - 1);
+        let oy = rand_range(1, GRID_H - 1);
         if !is_occupied(ox, oy, snake, obstacles) && (ox, oy) != food {
             return Some((ox, oy));
         }
@@ -110,26 +117,26 @@ fn save_highscore(score: u32) {
 #[no_mangle]
 pub extern "C" fn init() {
     let win = Window::new("Snake", 100, 100, OFFSET_X * 2 + GRID_W * CELL_SIZE, OFFSET_Y + 10 + GRID_H * CELL_SIZE);
-    let initial_snake = vec![(GRID_W / 2, GRID_H / 2), (GRID_W / 2 - 1, GRID_H / 2), (GRID_W / 2 - 2, GRID_H / 2)];
-    let obstacles = Vec::new();
-    let (initial_food, initial_food_type) = spawn_food(&initial_snake, &obstacles);
-
+    
     unsafe {
         APP = Some(SnakeGame {
             win,
-            snake: initial_snake,
+            state: GameState::MainMenu,
+            snake: Vec::new(),
             dir: Direction::Right,
             next_dir: Direction::Right,
-            food: initial_food,
-            food_type: initial_food_type,
+            food: (0, 0),
+            food_type: FoodType::Normal,
             score: 0,
             highscore: load_highscore(),
-            game_over: false,
             frame_count: 0,
             speed: 6,
-            obstacles,
+            sprinting: false,
+            wrapping: false,
+            obstacles: Vec::new(),
             particles: Vec::new(),
             glow_ticks: 0,
+            level: 0,
         });
     }
 }
@@ -144,9 +151,24 @@ fn restart_game(app: &mut SnakeGame) {
     app.food_type = t;
     app.score = 0;
     app.speed = 6;
-    app.game_over = false;
+    app.state = GameState::Playing;
     app.particles.clear();
     app.glow_ticks = 0;
+    app.level = 0;
+    
+    // Start fanfare
+    unsafe { sys_play_tone(440.0, 100, 0); }
+}
+
+fn explode_particles(app: &mut SnakeGame, x: f32, y: f32, color: (f32, f32, f32), count: usize) {
+    for _ in 0..count {
+        app.particles.push(Particle {
+            x, y,
+            vx: rand_float(-3.0, 3.0), vy: rand_float(-3.0, 3.0),
+            life: rand_float(10.0, 25.0), max_life: 25.0,
+            color,
+        });
+    }
 }
 
 #[no_mangle]
@@ -154,20 +176,34 @@ pub extern "C" fn handle_key_down(key_code: u32) -> bool {
     let mut needs_redraw = false;
     unsafe {
         if let Some(app) = &mut APP {
-            if app.game_over {
-                if key_code == 13 || key_code == 32 {
+            if app.state == GameState::MainMenu {
+                if key_code == 13 || key_code == 32 { // Enter or Space
                     restart_game(app);
+                    needs_redraw = true;
+                } else if key_code == 119 || key_code == 87 { // W to toggle wrapping
+                    app.wrapping = !app.wrapping;
                     needs_redraw = true;
                 }
                 return needs_redraw;
             }
 
-            match key_code {
-                1037 | 65 | 97 if app.dir != Direction::Right => { app.next_dir = Direction::Left; needs_redraw = true; },
-                1038 | 87 | 119 if app.dir != Direction::Down => { app.next_dir = Direction::Up; needs_redraw = true; },
-                1039 | 68 | 100 if app.dir != Direction::Left => { app.next_dir = Direction::Right; needs_redraw = true; },
-                1040 | 83 | 115 if app.dir != Direction::Up => { app.next_dir = Direction::Down; needs_redraw = true; },
-                _ => {}
+            if app.state == GameState::GameOver {
+                if key_code == 13 || key_code == 32 {
+                    app.state = GameState::MainMenu;
+                    needs_redraw = true;
+                }
+                return needs_redraw;
+            }
+
+            if app.state == GameState::Playing {
+                match key_code {
+                    1037 | 65 | 97 if app.dir != Direction::Right => { app.next_dir = Direction::Left; needs_redraw = true; },
+                    1038 | 87 | 119 if app.dir != Direction::Down => { app.next_dir = Direction::Up; needs_redraw = true; },
+                    1039 | 68 | 100 if app.dir != Direction::Left => { app.next_dir = Direction::Right; needs_redraw = true; },
+                    1040 | 83 | 115 if app.dir != Direction::Up => { app.next_dir = Direction::Down; needs_redraw = true; },
+                    32 => { app.sprinting = !app.sprinting; needs_redraw = true; }, // Space to toggle sprint
+                    _ => {}
+                }
             }
         }
     }
@@ -175,11 +211,19 @@ pub extern "C" fn handle_key_down(key_code: u32) -> bool {
 }
 
 #[no_mangle]
+pub extern "C" fn handle_key_up(_key_code: u32) -> bool {
+    false
+}
+
+#[no_mangle]
 pub extern "C" fn handle_mouse_down(_mx: i32, _my: i32, _x: i32, _y: i32) -> bool {
     unsafe {
         if let Some(app) = &mut APP {
-            if app.game_over {
+            if app.state == GameState::MainMenu {
                 restart_game(app);
+                return true;
+            } else if app.state == GameState::GameOver {
+                app.state = GameState::MainMenu;
                 return true;
             }
         }
@@ -205,7 +249,9 @@ pub extern "C" fn tick(x: i32, y: i32, _w: i32, _h: i32) {
                 app.glow_ticks -= 1;
             }
             
-            if !app.game_over && app.frame_count % app.speed == 0 {
+            let current_speed = if app.sprinting { (app.speed / 2).max(1) } else { app.speed };
+            
+            if app.state == GameState::Playing && app.frame_count % current_speed == 0 {
                 app.dir = app.next_dir;
                 let head = app.snake[0];
                 let mut new_head = head;
@@ -217,23 +263,30 @@ pub extern "C" fn tick(x: i32, y: i32, _w: i32, _h: i32) {
                 }
                 
                 // Wall collision
-                if new_head.0 < 0 || new_head.0 >= GRID_W || new_head.1 < 0 || new_head.1 >= GRID_H {
-                    app.game_over = true;
+                if app.wrapping {
+                    new_head.0 = (new_head.0 + GRID_W) % GRID_W;
+                    new_head.1 = (new_head.1 + GRID_H) % GRID_H;
+                } else if new_head.0 < 0 || new_head.0 >= GRID_W || new_head.1 < 0 || new_head.1 >= GRID_H {
+                    app.state = GameState::GameOver;
                     sys_play_tone(150.0, 500, 3);
-                } else if app.obstacles.contains(&new_head) {
-                    app.game_over = true;
-                    sys_play_tone(100.0, 600, 3); // Deeper crash for rocks
-                } else {
-                    for i in 0..app.snake.len() - 1 {
-                        if app.snake[i] == new_head {
-                            app.game_over = true;
-                            sys_play_tone(150.0, 500, 3);
-                            break;
+                }
+                
+                if app.state == GameState::Playing {
+                    if app.obstacles.contains(&new_head) {
+                        app.state = GameState::GameOver;
+                        sys_play_tone(100.0, 600, 3);
+                    } else {
+                        for i in 0..app.snake.len() - 1 {
+                            if app.snake[i] == new_head {
+                                app.state = GameState::GameOver;
+                                sys_play_tone(150.0, 500, 3);
+                                break;
+                            }
                         }
                     }
                 }
                 
-                if app.game_over {
+                if app.state == GameState::GameOver {
                     if app.score > app.highscore {
                         app.highscore = app.score;
                         save_highscore(app.highscore);
@@ -242,48 +295,52 @@ pub extern "C" fn tick(x: i32, y: i32, _w: i32, _h: i32) {
                     app.snake.insert(0, new_head);
                     
                     if new_head == app.food {
-                        // Explode particles
                         let px = (OFFSET_X + app.food.0 * CELL_SIZE + CELL_SIZE / 2) as f32;
                         let py = (OFFSET_Y + app.food.1 * CELL_SIZE + CELL_SIZE / 2) as f32;
                         
-                        let color = match app.food_type {
-                            FoodType::Normal => (0.9, 0.2, 0.2),
-                            FoodType::Golden => (1.0, 0.8, 0.2),
-                            FoodType::Poison => (0.6, 0.2, 0.8),
-                        };
-                        
-                        for _ in 0..15 {
-                            app.particles.push(Particle {
-                                x: px, y: py,
-                                vx: rand_float(-3.0, 3.0), vy: rand_float(-3.0, 3.0),
-                                life: rand_float(10.0, 25.0), max_life: 25.0,
-                                color,
-                            });
-                        }
-                        
                         match app.food_type {
                             FoodType::Normal => {
+                                explode_particles(app, px, py, (0.9, 0.2, 0.2), 15);
                                 app.score += 10;
                                 sys_play_tone(880.0, 50, 1);
                             }
                             FoodType::Golden => {
+                                explode_particles(app, px, py, (1.0, 0.8, 0.2), 30);
                                 app.score += 50;
                                 app.glow_ticks = 90;
                                 sys_play_tone(1200.0, 100, 2);
                             }
                             FoodType::Poison => {
+                                explode_particles(app, px, py, (0.6, 0.2, 0.8), 20);
                                 app.score = app.score.saturating_sub(20);
                                 sys_play_tone(300.0, 200, 3);
                                 app.snake.pop();
-                                app.snake.pop(); // Shrink extra!
+                                app.snake.pop();
                                 if app.snake.len() < 2 {
                                     app.snake.truncate(2);
                                 }
                             }
+                            FoodType::Dynamite => {
+                                explode_particles(app, px, py, (1.0, 0.4, 0.1), 50);
+                                app.score += 20;
+                                sys_play_tone(200.0, 400, 3); // Boom
+                                
+                                // Explode all obstacles!
+                                while let Some((ox, oy)) = app.obstacles.pop() {
+                                    let opx = (OFFSET_X + ox * CELL_SIZE + CELL_SIZE / 2) as f32;
+                                    let opy = (OFFSET_Y + oy * CELL_SIZE + CELL_SIZE / 2) as f32;
+                                    explode_particles(app, opx, opy, (0.5, 0.5, 0.5), 10);
+                                }
+                            }
                         }
                         
-                        // Spawn obstacles every 50 points (using threshold passing)
-                        if app.score % 50 < 10 && app.score > 0 && app.food_type != FoodType::Poison {
+                        let new_level = app.score / 100;
+                        if new_level > app.level {
+                            app.level = new_level;
+                            sys_play_tone(600.0, 150, 0); // Level up!
+                        }
+                        
+                        if app.score % 50 < 10 && app.score > 0 && app.food_type != FoodType::Poison && app.food_type != FoodType::Dynamite {
                             if let Some(obs) = spawn_obstacle(&app.snake, &app.obstacles, app.food) {
                                 app.obstacles.push(obs);
                             }
@@ -302,59 +359,91 @@ pub extern "C" fn tick(x: i32, y: i32, _w: i32, _h: i32) {
             // Render
             app.win.x = x;
             app.win.y = y;
-            app.win.draw_background(0.08, 0.1, 0.08);
             
-            let score_text = format!("🍎 {}   ⭐ HI: {}", app.score, app.highscore);
-            libui::draw_text_js(x as f32 + 15.0, y as f32 + 12.0, score_text.as_ptr(), score_text.len(), 18.0, 0.9, 0.9, 0.9, 1.0);
+            let bg_color = match app.level % 4 {
+                0 => (0.05, 0.05, 0.05), // Dark Gray
+                1 => (0.0, 0.0, 0.1),    // Dark Blue
+                2 => (0.1, 0.0, 0.0),    // Dark Red
+                3 => (0.05, 0.0, 0.1),   // Dark Purple
+                _ => (0.05, 0.05, 0.05),
+            };
+            app.win.draw_background(bg_color.0, bg_color.1, bg_color.2);
             
             let base_x = x + OFFSET_X;
             let base_y = y + OFFSET_Y;
-            libui::draw_rect_js(base_x as f32 - 4.0, base_y as f32 - 4.0, (GRID_W * CELL_SIZE) as f32 + 8.0, (GRID_H * CELL_SIZE) as f32 + 8.0, 0.15, 0.25, 0.15, 1.0, 8.0, 0.0);
-            libui::draw_rect_js(base_x as f32, base_y as f32, (GRID_W * CELL_SIZE) as f32, (GRID_H * CELL_SIZE) as f32, 0.05, 0.1, 0.05, 1.0, 4.0, 0.0);
             
-            // Draw Obstacles
-            for &(ox, oy) in &app.obstacles {
-                libui::draw_rect_js((base_x + ox * CELL_SIZE) as f32, (base_y + oy * CELL_SIZE) as f32, CELL_SIZE as f32, CELL_SIZE as f32, 0.4, 0.4, 0.4, 1.0, 2.0, 0.0);
-                libui::draw_rect_js((base_x + ox * CELL_SIZE) as f32 + 2.0, (base_y + oy * CELL_SIZE) as f32 + 2.0, CELL_SIZE as f32 - 4.0, CELL_SIZE as f32 - 4.0, 0.3, 0.3, 0.3, 1.0, 1.0, 0.0);
+            if app.state == GameState::MainMenu {
+                libui::draw_text_js(x as f32 + 190.0, y as f32 + 80.0, "SNAKE".as_ptr(), 5, 48.0, 0.2, 0.8, 0.2, 1.0);
+                
+                let hi_text = format!("HIGH SCORE: {}", app.highscore);
+                libui::draw_text_js(x as f32 + 180.0, y as f32 + 150.0, hi_text.as_ptr(), hi_text.len(), 20.0, 1.0, 1.0, 1.0, 1.0);
+                
+                let wrap_text = if app.wrapping { "WALLS: WRAPPING [Press W to toggle]" } else { "WALLS: SOLID [Press W to toggle]" };
+                libui::draw_text_js(x as f32 + 120.0, y as f32 + 200.0, wrap_text.as_ptr(), wrap_text.len(), 16.0, 0.6, 0.6, 0.6, 1.0);
+                
+                libui::draw_text_js(x as f32 + 115.0, y as f32 + 260.0, "PRESS [ENTER] OR [SPACE] TO START".as_ptr(), 33, 18.0, 1.0, 1.0, 0.0, 1.0);
+                
+                libui::draw_text_js(x as f32 + 130.0, y as f32 + 300.0, "Press [SPACE] in-game to toggle SPRINT".as_ptr(), 38, 14.0, 0.4, 0.7, 1.0, 1.0);
+                return;
             }
             
-            // Draw Food
+            let border_color = match app.level % 4 {
+                0 => (0.4, 0.4, 0.4),
+                1 => (0.2, 0.4, 0.8),
+                2 => (0.8, 0.2, 0.2),
+                3 => (0.6, 0.2, 0.8),
+                _ => (0.4, 0.4, 0.4),
+            };
+            
+            let sprint_indicator = if app.sprinting { "   [>>> SPRINTING]" } else { "" };
+            let score_text = format!("SCORE: {}   HI: {}{}", app.score, app.highscore, sprint_indicator);
+            libui::draw_text_js(x as f32 + 15.0, y as f32 + 12.0, score_text.as_ptr(), score_text.len(), 18.0, 1.0, 1.0, 1.0, 1.0);
+            
+            libui::draw_rect_js(base_x as f32 - 2.0, base_y as f32 - 2.0, (GRID_W * CELL_SIZE) as f32 + 4.0, (GRID_H * CELL_SIZE) as f32 + 4.0, border_color.0, border_color.1, border_color.2, 1.0, 0.0, 0.0);
+            libui::draw_rect_js(base_x as f32, base_y as f32, (GRID_W * CELL_SIZE) as f32, (GRID_H * CELL_SIZE) as f32, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0);
+            
+            for &(ox, oy) in &app.obstacles {
+                libui::draw_rect_js((base_x + ox * CELL_SIZE) as f32, (base_y + oy * CELL_SIZE) as f32, CELL_SIZE as f32, CELL_SIZE as f32, 0.5, 0.5, 0.5, 1.0, 0.0, 0.0);
+                libui::draw_rect_js((base_x + ox * CELL_SIZE) as f32 + 2.0, (base_y + oy * CELL_SIZE) as f32 + 2.0, CELL_SIZE as f32 - 4.0, CELL_SIZE as f32 - 4.0, 0.3, 0.3, 0.3, 1.0, 0.0, 0.0);
+            }
+            
             let fx = (base_x + app.food.0 * CELL_SIZE) as f32;
             let fy = (base_y + app.food.1 * CELL_SIZE) as f32;
             match app.food_type {
                 FoodType::Normal => {
-                    libui::draw_rect_js(fx, fy + 2.0, CELL_SIZE as f32, CELL_SIZE as f32 - 2.0, 0.9, 0.2, 0.2, 1.0, 6.0, 0.0);
-                    libui::draw_rect_js(fx + 8.0, fy - 2.0, 4.0, 6.0, 0.2, 0.8, 0.2, 1.0, 2.0, 0.0);
+                    libui::draw_rect_js(fx + 2.0, fy + 2.0, CELL_SIZE as f32 - 4.0, CELL_SIZE as f32 - 4.0, 1.0, 0.2, 0.2, 1.0, 0.0, 0.0);
                 }
                 FoodType::Golden => {
-                    libui::draw_rect_js(fx, fy + 2.0, CELL_SIZE as f32, CELL_SIZE as f32 - 2.0, 1.0, 0.8, 0.2, 1.0, 6.0, 10.0);
-                    libui::draw_rect_js(fx + 8.0, fy - 2.0, 4.0, 6.0, 0.8, 1.0, 0.2, 1.0, 2.0, 0.0);
+                    libui::draw_rect_js(fx + 2.0, fy + 2.0, CELL_SIZE as f32 - 4.0, CELL_SIZE as f32 - 4.0, 1.0, 0.8, 0.0, 1.0, 0.0, 0.0);
                 }
                 FoodType::Poison => {
-                    libui::draw_rect_js(fx, fy + 2.0, CELL_SIZE as f32, CELL_SIZE as f32 - 2.0, 0.6, 0.2, 0.8, 1.0, 6.0, 0.0);
-                    libui::draw_rect_js(fx + 8.0, fy - 2.0, 4.0, 6.0, 0.4, 0.1, 0.6, 1.0, 2.0, 0.0);
+                    libui::draw_rect_js(fx + 2.0, fy + 2.0, CELL_SIZE as f32 - 4.0, CELL_SIZE as f32 - 4.0, 0.8, 0.2, 1.0, 1.0, 0.0, 0.0);
+                }
+                FoodType::Dynamite => {
+                    libui::draw_rect_js(fx + 2.0, fy + 2.0, CELL_SIZE as f32 - 4.0, CELL_SIZE as f32 - 4.0, 1.0, 0.5, 0.0, 1.0, 0.0, 0.0);
+                    libui::draw_rect_js(fx + 6.0, fy - 2.0, 4.0, 4.0, 1.0, 1.0, 0.5, 1.0, 0.0, 0.0); // Spark
                 }
             }
             
-            // Draw Particles
             for p in &app.particles {
                 let a = p.life / p.max_life;
-                libui::draw_rect_js(x as f32 + p.x, y as f32 + p.y, 4.0, 4.0, p.color.0, p.color.1, p.color.2, a, 2.0, 0.0);
+                libui::draw_rect_js(x as f32 + p.x, y as f32 + p.y, 4.0, 4.0, p.color.0, p.color.1, p.color.2, a, 0.0, 0.0);
             }
             
-            // Draw Snake
             for (i, &(sx, sy)) in app.snake.iter().enumerate() {
                 let is_head = i == 0;
-                let mut r = if is_head { 0.3 } else { 0.2 };
-                let mut g = if is_head { 0.9 } else { 0.6 };
-                let mut b = if is_head { 0.3 } else { 0.2 };
+                
+                let mut r = 0.2;
+                let mut g = 0.8;
+                let mut b = 0.2;
                 
                 if app.glow_ticks > 0 {
-                    r = 1.0; g = 0.8; b = 0.2; // Glow golden
+                    r = 1.0; g = 0.9; b = 0.2;
+                } else if is_head {
+                    r = 0.3; g = 1.0; b = 0.3;
                 }
                 
-                let radius = if is_head { 6.0 } else { 4.0 };
-                libui::draw_rect_js((base_x + sx * CELL_SIZE) as f32 + 1.0, (base_y + sy * CELL_SIZE) as f32 + 1.0, CELL_SIZE as f32 - 2.0, CELL_SIZE as f32 - 2.0, r, g, b, 1.0, radius, if app.glow_ticks > 0 { 5.0 } else { 0.0 });
+                libui::draw_rect_js((base_x + sx * CELL_SIZE) as f32 + 1.0, (base_y + sy * CELL_SIZE) as f32 + 1.0, CELL_SIZE as f32 - 2.0, CELL_SIZE as f32 - 2.0, r, g, b, 1.0, 0.0, 0.0);
                 
                 if is_head {
                     let (ex1, ey1, ex2, ey2) = match app.dir {
@@ -363,17 +452,17 @@ pub extern "C" fn tick(x: i32, y: i32, _w: i32, _h: i32) {
                         Direction::Up => (4.0, 4.0, 10.0, 4.0),
                         Direction::Down => (4.0, 10.0, 10.0, 10.0),
                     };
-                    libui::draw_rect_js((base_x + sx * CELL_SIZE) as f32 + ex1, (base_y + sy * CELL_SIZE) as f32 + ey1, 3.0, 3.0, 0.0, 0.0, 0.0, 1.0, 1.5, 0.0);
-                    libui::draw_rect_js((base_x + sx * CELL_SIZE) as f32 + ex2, (base_y + sy * CELL_SIZE) as f32 + ey2, 3.0, 3.0, 0.0, 0.0, 0.0, 1.0, 1.5, 0.0);
+                    libui::draw_rect_js((base_x + sx * CELL_SIZE) as f32 + ex1, (base_y + sy * CELL_SIZE) as f32 + ey1, 2.0, 2.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0);
+                    libui::draw_rect_js((base_x + sx * CELL_SIZE) as f32 + ex2, (base_y + sy * CELL_SIZE) as f32 + ey2, 2.0, 2.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0);
                 }
             }
             
-            if app.game_over {
+            if app.state == GameState::GameOver {
                 let go_text = "GAME OVER";
-                let restart_text = "Click or Press Enter to Restart";
+                let restart_text = "Click or Press Enter to return to Menu";
                 libui::draw_rect_js(base_x as f32, base_y as f32 + (GRID_H * CELL_SIZE / 2 - 40) as f32, (GRID_W * CELL_SIZE) as f32, 80.0, 0.0, 0.0, 0.0, 0.8, 0.0, 0.0);
                 libui::draw_text_js(base_x as f32 + 150.0, base_y as f32 + (GRID_H * CELL_SIZE / 2 - 20) as f32, go_text.as_ptr(), go_text.len(), 24.0, 1.0, 0.2, 0.2, 1.0);
-                libui::draw_text_js(base_x as f32 + 100.0, base_y as f32 + (GRID_H * CELL_SIZE / 2 + 10) as f32, restart_text.as_ptr(), restart_text.len(), 14.0, 0.8, 0.8, 0.8, 1.0);
+                libui::draw_text_js(base_x as f32 + 70.0, base_y as f32 + (GRID_H * CELL_SIZE / 2 + 10) as f32, restart_text.as_ptr(), restart_text.len(), 14.0, 0.8, 0.8, 0.8, 1.0);
             }
         }
     }

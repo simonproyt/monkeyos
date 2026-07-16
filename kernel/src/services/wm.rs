@@ -462,6 +462,7 @@ impl Process for WindowManager {
                             ("/bin/piano", "🎹", "Piano"),
                             ("/bin/midiplayer", "🎵", "MIDI Player"),
                             ("/bin/taskman", "📊", "Task Manager"),
+                            ("/bin/snake", "🐍", "Snake"),
                         ];
                         let mut filtered_len = 0;
                         for app in all_apps.iter() {
@@ -601,8 +602,11 @@ impl Process for WindowManager {
                                     }
                                 }
 
+                                let max_scroll = (filtered.len() as f32 * 50.0 - 300.0).max(0.0);
+                                let clamped_scroll = self.start_menu_scroll.clamp(0.0, max_scroll);
+
                                 let click_y = self.mouse_y as f32;
-                                let mut y = dock_y as f32 - 320.0 - self.start_menu_scroll;
+                                let mut y = dock_y as f32 - 320.0 - clamped_scroll;
                                 let mut clicked_app = false;
                                 
                                 if self.mouse_x >= dock_x + 230 && self.mouse_x <= dock_x + 250 {
