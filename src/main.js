@@ -367,7 +367,7 @@ async function bootstrap() {
         let shouldSaveVfs = false;
         
         // Preload binaries
-        const binaries = ['hello.wasm', 'coreutils.wasm', 'sh.wasm', 'edit.wasm', 'beep.wasm', 'fetch.wasm', 'imgview.wasm', 'calc.wasm', 'fileman.wasm', 'notepad.wasm', 'piano.wasm', 'midiplayer.wasm', 'taskman.wasm'];
+        const binaries = ['hello.wasm', 'coreutils.wasm', 'sh.wasm', 'edit.wasm', 'beep.wasm', 'fetch.wasm', 'imgview.wasm', 'calc.wasm', 'fileman.wasm', 'notepad.wasm', 'piano.wasm', 'midiplayer.wasm', 'taskman.wasm', 'snake.wasm'];
         
         function getBinaryFromDB(db, name) {
             return new Promise((resolve) => {

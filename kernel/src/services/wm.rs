@@ -65,6 +65,7 @@ pub struct WindowManager {
     last_click_time: u64,
     last_time_str: String,
     last_half_second: u64,
+    last_frame: u64,
     mouse_is_down: bool,
     start_menu_scroll_dragging: bool,
 }
@@ -91,6 +92,7 @@ impl WindowManager {
             last_click_time: 0,
             last_time_str: String::new(),
             last_half_second: 0,
+            last_frame: 0,
             mouse_is_down: false,
             start_menu_scroll_dragging: false,
         }
@@ -865,6 +867,13 @@ impl Process for WindowManager {
         let current_half_second = local_ms / 500;
         if current_half_second != self.last_half_second {
             self.last_half_second = current_half_second;
+            needs_redraw = true;
+        }
+
+        // Force redraw every 33ms for smooth animations and GUI apps
+        let current_frame = local_ms / 33;
+        if current_frame != self.last_frame {
+            self.last_frame = current_frame;
             needs_redraw = true;
         }
 

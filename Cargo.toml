@@ -14,7 +14,8 @@ members = [
     "apps/fetch",
     "apps/piano",
     "apps/midiplayer",
-    "apps/taskman"
+    "apps/taskman",
+    "apps/snake"
 ]
 resolver = "2"
 
