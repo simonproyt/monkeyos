@@ -190,26 +190,42 @@ pub extern "C" fn tick(x: i32, y: i32, _w: i32, _h: i32) {
             // Render
             app.win.x = x;
             app.win.y = y;
-            app.win.draw_background(0.1, 0.1, 0.15);
+            app.win.draw_background(0.08, 0.1, 0.08);
             
             // Draw Header
-            let score_text = format!("Score: {}", app.score);
-            libui::draw_text_js(x as f32 + 10.0, y as f32 + 10.0, score_text.as_ptr(), score_text.len(), 16.0, 1.0, 1.0, 1.0, 1.0);
+            let score_text = format!("🍎 Score: {}", app.score);
+            libui::draw_text_js(x as f32 + 15.0, y as f32 + 12.0, score_text.as_ptr(), score_text.len(), 18.0, 0.9, 0.9, 0.9, 1.0);
             
             // Draw Play Area
             let base_x = x + OFFSET_X;
             let base_y = y + OFFSET_Y;
-            libui::draw_rect_js(base_x as f32 - 2.0, base_y as f32 - 2.0, (GRID_W * CELL_SIZE) as f32 + 4.0, (GRID_H * CELL_SIZE) as f32 + 4.0, 0.2, 0.2, 0.25, 1.0, 0.0, 0.0);
-            libui::draw_rect_js(base_x as f32, base_y as f32, (GRID_W * CELL_SIZE) as f32, (GRID_H * CELL_SIZE) as f32, 0.05, 0.05, 0.05, 1.0, 0.0, 0.0);
+            libui::draw_rect_js(base_x as f32 - 4.0, base_y as f32 - 4.0, (GRID_W * CELL_SIZE) as f32 + 8.0, (GRID_H * CELL_SIZE) as f32 + 8.0, 0.15, 0.25, 0.15, 1.0, 8.0, 0.0);
+            libui::draw_rect_js(base_x as f32, base_y as f32, (GRID_W * CELL_SIZE) as f32, (GRID_H * CELL_SIZE) as f32, 0.05, 0.1, 0.05, 1.0, 4.0, 0.0);
             
-            // Draw Food
-            libui::draw_rect_js((base_x + app.food.0 * CELL_SIZE) as f32, (base_y + app.food.1 * CELL_SIZE) as f32, CELL_SIZE as f32, CELL_SIZE as f32, 1.0, 0.3, 0.3, 1.0, 4.0, 0.0);
+            // Draw Food (Apple)
+            let fx = (base_x + app.food.0 * CELL_SIZE) as f32;
+            let fy = (base_y + app.food.1 * CELL_SIZE) as f32;
+            libui::draw_rect_js(fx, fy + 2.0, CELL_SIZE as f32, CELL_SIZE as f32 - 2.0, 0.9, 0.2, 0.2, 1.0, 6.0, 0.0); // Apple body
+            libui::draw_rect_js(fx + 8.0, fy - 2.0, 4.0, 6.0, 0.2, 0.8, 0.2, 1.0, 2.0, 0.0); // Leaf
             
             // Draw Snake
             for (i, &(sx, sy)) in app.snake.iter().enumerate() {
                 let is_head = i == 0;
-                let (r, g, b) = if is_head { (0.4, 1.0, 0.4) } else { (0.2, 0.8, 0.2) };
-                libui::draw_rect_js((base_x + sx * CELL_SIZE) as f32 + 1.0, (base_y + sy * CELL_SIZE) as f32 + 1.0, CELL_SIZE as f32 - 2.0, CELL_SIZE as f32 - 2.0, r, g, b, 1.0, 2.0, 0.0);
+                let (r, g, b) = if is_head { (0.3, 0.9, 0.3) } else { (0.2, 0.6, 0.2) };
+                let radius = if is_head { 6.0 } else { 4.0 };
+                libui::draw_rect_js((base_x + sx * CELL_SIZE) as f32 + 1.0, (base_y + sy * CELL_SIZE) as f32 + 1.0, CELL_SIZE as f32 - 2.0, CELL_SIZE as f32 - 2.0, r, g, b, 1.0, radius, 0.0);
+                
+                // Head Eyes
+                if is_head {
+                    let (ex1, ey1, ex2, ey2) = match app.dir {
+                        Direction::Right => (10.0, 4.0, 10.0, 10.0),
+                        Direction::Left => (4.0, 4.0, 4.0, 10.0),
+                        Direction::Up => (4.0, 4.0, 10.0, 4.0),
+                        Direction::Down => (4.0, 10.0, 10.0, 10.0),
+                    };
+                    libui::draw_rect_js((base_x + sx * CELL_SIZE) as f32 + ex1, (base_y + sy * CELL_SIZE) as f32 + ey1, 3.0, 3.0, 0.0, 0.0, 0.0, 1.0, 1.5, 0.0);
+                    libui::draw_rect_js((base_x + sx * CELL_SIZE) as f32 + ex2, (base_y + sy * CELL_SIZE) as f32 + ey2, 3.0, 3.0, 0.0, 0.0, 0.0, 1.0, 1.5, 0.0);
+                }
             }
             
             // Draw Game Over Overlay

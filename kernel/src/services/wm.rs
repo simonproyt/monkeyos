@@ -336,6 +336,7 @@ impl WindowManager {
                 ("/bin/piano", "🎹", "Piano", (0.8, 0.3, 0.3)),
                 ("/bin/midiplayer", "🎵", "MIDI Player", (0.3, 0.8, 0.5)),
                 ("/bin/taskman", "📊", "Task Manager", (0.5, 0.5, 0.8)),
+                ("/bin/snake", "🐍", "Snake", (0.3, 0.8, 0.3)),
             ];
 
             let query = self.start_menu_search.to_lowercase();
@@ -589,6 +590,7 @@ impl Process for WindowManager {
                                     ("/bin/piano", "🎹", "Piano"),
                                     ("/bin/midiplayer", "🎵", "MIDI Player"),
                                     ("/bin/taskman", "📊", "Task Manager"),
+                                    ("/bin/snake", "🐍", "Snake"),
                                 ];
 
                                 let query = self.start_menu_search.to_lowercase();
