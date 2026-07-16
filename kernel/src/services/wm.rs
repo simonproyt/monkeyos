@@ -271,6 +271,8 @@ impl WindowManager {
                 (0.9, 0.6, 0.2, "🎵")
             } else if w.title == "Task Manager" {
                 (0.5, 0.5, 0.8, "📊")
+            } else if w.title == "Snake" {
+                (0.3, 0.8, 0.3, "🐍")
             } else {
                 (0.5, 0.5, 0.5, "❓")
             };

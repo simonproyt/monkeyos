@@ -47,6 +47,7 @@ struct SnakeGame {
     particles: Vec<Particle>,
     glow_ticks: u32,
     level: u32,
+    stamina: f32,
 }
 
 static mut APP: Option<SnakeGame> = None;
@@ -81,9 +82,9 @@ fn spawn_food(snake: &[(i32, i32)], obstacles: &[(i32, i32)]) -> ((i32, i32), Fo
         let fy = rand_range(0, GRID_H);
         if !is_occupied(fx, fy, snake, obstacles) {
             let r = rand_range(0, 100);
-            let ftype = if r < 5 { FoodType::Dynamite }
-                        else if r < 15 { FoodType::Golden }
-                        else if r < 25 { FoodType::Poison }
+            let ftype = if r < 10 && !obstacles.is_empty() { FoodType::Dynamite }
+                        else if r < 20 { FoodType::Golden }
+                        else if r < 30 { FoodType::Poison }
                         else { FoodType::Normal };
             return ((fx, fy), ftype);
         }
@@ -101,8 +102,9 @@ fn spawn_obstacle(snake: &[(i32, i32)], obstacles: &[(i32, i32)], food: (i32, i3
     None
 }
 
-fn load_highscore() -> u32 {
-    if let Ok(data) = fs::read_to_string("/snake_highscore.txt") {
+fn load_highscore(wrapping: bool) -> u32 {
+    let path = if wrapping { "/snake_hs_wrap.txt" } else { "/snake_hs_solid.txt" };
+    if let Ok(data) = fs::read_to_string(path) {
         if let Ok(val) = data.trim().parse::<u32>() {
             return val;
         }
@@ -110,8 +112,9 @@ fn load_highscore() -> u32 {
     0
 }
 
-fn save_highscore(score: u32) {
-    let _ = fs::write("/snake_highscore.txt", score.to_string());
+fn save_highscore(score: u32, wrapping: bool) {
+    let path = if wrapping { "/snake_hs_wrap.txt" } else { "/snake_hs_solid.txt" };
+    let _ = fs::write(path, score.to_string());
 }
 
 #[no_mangle]
@@ -128,7 +131,7 @@ pub extern "C" fn init() {
             food: (0, 0),
             food_type: FoodType::Normal,
             score: 0,
-            highscore: load_highscore(),
+            highscore: load_highscore(false),
             frame_count: 0,
             speed: 6,
             sprinting: false,
@@ -137,6 +140,7 @@ pub extern "C" fn init() {
             particles: Vec::new(),
             glow_ticks: 0,
             level: 0,
+            stamina: 100.0,
         });
     }
 }
@@ -155,6 +159,9 @@ fn restart_game(app: &mut SnakeGame) {
     app.particles.clear();
     app.glow_ticks = 0;
     app.level = 0;
+    app.stamina = 100.0;
+    app.sprinting = false;
+    app.highscore = load_highscore(app.wrapping);
     
     // Start fanfare
     unsafe { sys_play_tone(440.0, 100, 0); }
@@ -182,6 +189,7 @@ pub extern "C" fn handle_key_down(key_code: u32) -> bool {
                     needs_redraw = true;
                 } else if key_code == 119 || key_code == 87 { // W to toggle wrapping
                     app.wrapping = !app.wrapping;
+                    app.highscore = load_highscore(app.wrapping);
                     needs_redraw = true;
                 }
                 return needs_redraw;
@@ -249,6 +257,21 @@ pub extern "C" fn tick(x: i32, y: i32, _w: i32, _h: i32) {
                 app.glow_ticks -= 1;
             }
             
+            if app.state == GameState::Playing {
+                if app.sprinting {
+                    app.stamina -= 1.0;
+                    if app.stamina <= 0.0 {
+                        app.stamina = 0.0;
+                        app.sprinting = false;
+                    }
+                } else {
+                    app.stamina += 0.5;
+                    if app.stamina > 100.0 {
+                        app.stamina = 100.0;
+                    }
+                }
+            }
+            
             let current_speed = if app.sprinting { (app.speed / 2).max(1) } else { app.speed };
             
             if app.state == GameState::Playing && app.frame_count % current_speed == 0 {
@@ -287,9 +310,10 @@ pub extern "C" fn tick(x: i32, y: i32, _w: i32, _h: i32) {
                 }
                 
                 if app.state == GameState::GameOver {
+                    app.sprinting = false;
                     if app.score > app.highscore {
                         app.highscore = app.score;
-                        save_highscore(app.highscore);
+                        save_highscore(app.highscore, app.wrapping);
                     }
                 } else {
                     app.snake.insert(0, new_head);
@@ -336,9 +360,9 @@ pub extern "C" fn tick(x: i32, y: i32, _w: i32, _h: i32) {
                         
                         let new_level = app.score / 100;
                         if new_level > app.level {
-                            app.level = new_level;
                             sys_play_tone(600.0, 150, 0); // Level up!
                         }
+                        app.level = new_level;
                         
                         if app.score % 50 < 10 && app.score > 0 && app.food_type != FoodType::Poison && app.food_type != FoodType::Dynamite {
                             if let Some(obs) = spawn_obstacle(&app.snake, &app.obstacles, app.food) {
@@ -395,9 +419,16 @@ pub extern "C" fn tick(x: i32, y: i32, _w: i32, _h: i32) {
                 _ => (0.4, 0.4, 0.4),
             };
             
-            let sprint_indicator = if app.sprinting { "   [>>> SPRINTING]" } else { "" };
-            let score_text = format!("SCORE: {}   HI: {}{}", app.score, app.highscore, sprint_indicator);
+            let score_text = format!("SCORE: {}   HI: {}", app.score, app.highscore);
             libui::draw_text_js(x as f32 + 15.0, y as f32 + 12.0, score_text.as_ptr(), score_text.len(), 18.0, 1.0, 1.0, 1.0, 1.0);
+            
+            let stamina_text = "STAMINA:";
+            libui::draw_text_js(x as f32 + 280.0, y as f32 + 14.0, stamina_text.as_ptr(), stamina_text.len(), 12.0, 0.6, 0.6, 0.6, 1.0);
+            
+            let stamina_w = (app.stamina / 100.0) * 100.0;
+            let sprint_color = if app.sprinting { (0.2, 0.8, 1.0) } else { (0.4, 0.8, 0.4) };
+            libui::draw_rect_js(x as f32 + 350.0, y as f32 + 12.0, 100.0, 12.0, 0.2, 0.2, 0.2, 1.0, 0.0, 0.0);
+            libui::draw_rect_js(x as f32 + 350.0, y as f32 + 12.0, stamina_w, 12.0, sprint_color.0, sprint_color.1, sprint_color.2, 1.0, 0.0, 0.0);
             
             libui::draw_rect_js(base_x as f32 - 2.0, base_y as f32 - 2.0, (GRID_W * CELL_SIZE) as f32 + 4.0, (GRID_H * CELL_SIZE) as f32 + 4.0, border_color.0, border_color.1, border_color.2, 1.0, 0.0, 0.0);
             libui::draw_rect_js(base_x as f32, base_y as f32, (GRID_W * CELL_SIZE) as f32, (GRID_H * CELL_SIZE) as f32, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0);
