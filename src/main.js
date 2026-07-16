@@ -1419,6 +1419,10 @@ async function bootstrap() {
                 window.textCtxCache.baseline = 'top';
             }
             
+            if (window.textCtx.textAlign !== 'left') {
+                window.textCtx.textAlign = 'left';
+            }
+            
             window.textCtx.fillText(text, x, y);
         },
         measure_text_js: (ptr, len, font_size) => {
