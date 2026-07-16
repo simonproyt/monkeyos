@@ -1,0 +1,10 @@
+[package]
+name = "taskman"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+libui = { path = "../libui" }
+
+[lib]
+crate-type = ["cdylib"]

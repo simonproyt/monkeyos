@@ -267,6 +267,8 @@ impl WindowManager {
                 (0.8, 0.3, 0.3, "🎹")
             } else if w.title == "MIDI Player" {
                 (0.9, 0.6, 0.2, "🎵")
+            } else if w.title == "Task Manager" {
+                (0.5, 0.5, 0.8, "📊")
             } else {
                 (0.5, 0.5, 0.5, "❓")
             };
@@ -330,7 +332,8 @@ impl WindowManager {
                 ("/bin/notepad", "📝", "Notepad", (0.8, 0.4, 0.6)),
                 ("/bin/imgview", "🖼️", "Image Viewer", (0.2, 0.6, 0.8)),
                 ("/bin/piano", "🎹", "Piano", (0.8, 0.3, 0.3)),
-                ("/bin/midiplayer", "🎵", "MIDI Player", (0.4, 0.7, 0.8)),
+                ("/bin/midiplayer", "🎵", "MIDI Player", (0.3, 0.8, 0.5)),
+                ("/bin/taskman", "📊", "Task Manager", (0.5, 0.5, 0.8)),
             ];
 
             let query = self.start_menu_search.to_lowercase();
@@ -455,6 +458,7 @@ impl Process for WindowManager {
                             ("/bin/imgview", "🖼️", "Image Viewer"),
                             ("/bin/piano", "🎹", "Piano"),
                             ("/bin/midiplayer", "🎵", "MIDI Player"),
+                            ("/bin/taskman", "📊", "Task Manager"),
                         ];
                         let mut filtered_len = 0;
                         for app in all_apps.iter() {
@@ -582,6 +586,7 @@ impl Process for WindowManager {
                                     ("/bin/imgview", "🖼️", "Image Viewer"),
                                     ("/bin/piano", "🎹", "Piano"),
                                     ("/bin/midiplayer", "🎵", "MIDI Player"),
+                                    ("/bin/taskman", "📊", "Task Manager"),
                                 ];
 
                                 let query = self.start_menu_search.to_lowercase();

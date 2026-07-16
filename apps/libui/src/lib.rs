@@ -12,6 +12,18 @@ unsafe extern "C" {
     pub fn clear_text_js();
     pub fn load_image_js(id: u32, ptr: *const u8, len: usize);
     pub fn draw_image_js(id: u32, x: f32, y: f32, w: f32, h: f32);
+    pub fn sys_get_system_info(out_ptr: *mut u8, max_len: usize) -> i32;
+}
+
+pub fn get_system_info() -> String {
+    let mut buf = vec![0u8; 8192];
+    let len = unsafe { sys_get_system_info(buf.as_mut_ptr(), buf.len()) };
+    if len > 0 && len < buf.len() as i32 {
+        buf.truncate(len as usize);
+        String::from_utf8_lossy(&buf).into_owned()
+    } else {
+        String::new()
+    }
 }
 
 pub trait Widget {

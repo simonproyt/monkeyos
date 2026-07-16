@@ -40,6 +40,7 @@ unsafe extern "C" {
     fn sys_play_tone(freq: f32, duration_ms: u32, wave_type: u32);
     fn sys_schedule_note(freq: f32, duration_ms: u32, wave_type: u32, volume: f32, delay_ms: u32);
     fn sys_stop_audio();
+    fn sys_get_system_info(out_ptr: *mut u8, max_len: usize) -> i32;
 }
 
 pub fn call_sys_time_ms() -> u64 {
@@ -81,5 +82,16 @@ pub fn call_sys_execve(args_buf: &[u8], cwd: &str, stdin: Option<&str>, stdout: 
 pub fn print_direct(id: u32, text: &str) {
     unsafe {
         wasi_print_js(id, text.as_ptr(), text.len());
+    }
+}
+
+pub fn call_sys_get_system_info() -> String {
+    let mut buf = vec![0u8; 8192];
+    let len = unsafe { sys_get_system_info(buf.as_mut_ptr(), buf.len()) };
+    if len > 0 && len < buf.len() as i32 {
+        buf.truncate(len as usize);
+        String::from_utf8_lossy(&buf).into_owned()
+    } else {
+        String::new()
     }
 }

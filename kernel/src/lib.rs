@@ -280,7 +280,8 @@ pub unsafe extern "C" fn kernel_create_window(kernel: *mut Kernel, x: i32, y: i3
         4 => "Image Viewer".to_string(),
         5 => "Piano".to_string(),
         6 => "MIDI Player".to_string(),
-        _ => "App".to_string(),
+        7 => "Task Manager".to_string(),
+        _ => "Window".to_string(),
     };
     
     if let Some(wm_pid) = k.registry.lookup("wm") {

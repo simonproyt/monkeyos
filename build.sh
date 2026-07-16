@@ -62,6 +62,11 @@ cd apps/midiplayer
 cargo build --target wasm32-wasip1 --release
 cd ../..
 
+echo "Building Task Manager..."
+cd apps/taskman
+cargo build --target wasm32-wasip1 --release
+cd ../..
+
 
 mkdir -p public/bin
 cp target/wasm32-unknown-unknown/release/kernel.wasm public/
@@ -77,4 +82,5 @@ cp target/wasm32-wasip1/release/fileman.wasm public/bin/
 cp target/wasm32-wasip1/release/notepad.wasm public/bin/
 cp target/wasm32-wasip1/release/piano.wasm public/bin/
 cp target/wasm32-wasip1/release/midiplayer.wasm public/bin/
+cp target/wasm32-wasip1/release/taskman.wasm public/bin/
 echo "Build complete. Run ./serve.sh to start."

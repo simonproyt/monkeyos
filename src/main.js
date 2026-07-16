@@ -367,7 +367,7 @@ async function bootstrap() {
         let shouldSaveVfs = false;
         
         // Preload binaries
-        const binaries = ['hello.wasm', 'coreutils.wasm', 'sh.wasm', 'edit.wasm', 'beep.wasm', 'fetch.wasm', 'imgview.wasm', 'calc.wasm', 'fileman.wasm', 'notepad.wasm', 'piano.wasm', 'midiplayer.wasm'];
+        const binaries = ['hello.wasm', 'coreutils.wasm', 'sh.wasm', 'edit.wasm', 'beep.wasm', 'fetch.wasm', 'imgview.wasm', 'calc.wasm', 'fileman.wasm', 'notepad.wasm', 'piano.wasm', 'midiplayer.wasm', 'taskman.wasm'];
         
         function getBinaryFromDB(db, name) {
             return new Promise((resolve) => {
@@ -1617,6 +1617,30 @@ async function bootstrap() {
             }
             return 0;
         },
+        sys_get_system_info: (out_ptr, max_len) => {
+            if (!window.__WASI_PROXY.wasm) return -1;
+            const memory = new Uint8Array(window.__WASI_PROXY.wasm.exports.memory.buffer);
+            
+            const info = [];
+            info.push(`0;Kernel;${wasmInstance.exports.memory.buffer.byteLength};system`);
+            
+            for (let i = 0; i < window.gui_apps.length; i++) {
+                const app = window.gui_apps[i];
+                const mem = app.exports.memory ? app.exports.memory.buffer.byteLength : 0;
+                info.push(`${i + 1};${app.__name || "App"};${mem};gui`);
+            }
+            
+            const rawStr = info.join('|');
+            const encoder = new TextEncoder();
+            const encoded = encoder.encode(rawStr);
+            
+            const copyLen = Math.min(encoded.length, max_len - 1);
+            memory.set(encoded.subarray(0, copyLen), out_ptr);
+            memory[out_ptr + copyLen] = 0; // null terminate
+            
+            return copyLen;
+        },
+        
         sys_execve: (args_ptr, args_len, cwd_ptr, cwd_len, stdin_ptr, stdin_len, stdout_ptr, stdout_len, terminal_id) => {
             if (!window.__WASI_PROXY.wasm) return -1;
             const memory = new Uint8Array(window.__WASI_PROXY.wasm.exports.memory.buffer);
@@ -1676,6 +1700,8 @@ async function bootstrap() {
                     wasi_snapshot_preview1: wasi_snapshot_preview1,
                     env: env
                 });
+                
+                childInstance.__name = pathStr;
                 
                 // Context Switch!
                 const parentWasm = window.__WASI_PROXY.wasm;
