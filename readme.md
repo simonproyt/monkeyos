@@ -17,6 +17,9 @@ MonkeyOS - An experimental webos that uses the wasm runtime and rust to work
 - File browser
 - Terminal
 - Notepad
+- An image viewer
+- A chiptune midi player
+- Snake
 all of them are quite basic but they are good enough for demoing the ui lib and they will get improved
 ## How to compile:
 1. First you need to install the nodejs presquits by running npm i

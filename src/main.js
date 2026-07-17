@@ -198,7 +198,7 @@ async function initWebGPU() {
         
         const rect = {x, y, w, h, r, g, b, a, radius, shadow_blur};
 
-        if (window.textCtx && a > 0.8) {
+        if (window.textCtx && a > 0.8 && (w * h) > 800) {
             window.textCtx.clearRect(x, y, w, h);
         }
         
