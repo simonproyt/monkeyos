@@ -89,6 +89,11 @@ fn spawn_food(snake: &[(i32, i32)], obstacles: &[((i32, i32), (i32, i32))]) -> (
         let fy = rand_range(0, GRID_H);
         if !is_occupied(fx, fy, snake, obstacles) {
             let r = rand_range(0, 100);
+            
+            if obstacles.len() >= 3 && r < 25 {
+                return ((fx, fy), FoodType::Dynamite);
+            }
+
             let ftype = if r < 10 && !obstacles.is_empty() { FoodType::Dynamite }
                         else if r < 20 { FoodType::Golden }
                         else if r < 30 { FoodType::Poison }
@@ -542,7 +547,7 @@ pub extern "C" fn tick(x: i32, y: i32, _w: i32, _h: i32) {
             let bg_color = match app.level % 4 {
                 0 => (0.05, 0.05, 0.05), // Dark Gray
                 1 => (0.0, 0.0, 0.1),    // Dark Blue
-                2 => (0.1, 0.0, 0.0),    // Dark Red
+                2 => (0.0, 0.1, 0.0),    // Dark Green
                 3 => (0.05, 0.0, 0.1),   // Dark Purple
                 _ => (0.05, 0.05, 0.05),
             };

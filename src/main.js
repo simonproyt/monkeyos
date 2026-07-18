@@ -209,23 +209,59 @@ async function initWebGPU() {
         const pw = rect.w + padding * 2.0;
         const ph = rect.h + padding * 2.0;
 
-        const pushVertex = (vIdx, vx, vy) => {
-            vertices[idx + vIdx*12 + 0] = vx; vertices[idx + vIdx*12 + 1] = vy;
-            vertices[idx + vIdx*12 + 2] = rect.r; vertices[idx + vIdx*12 + 3] = rect.g; 
-            vertices[idx + vIdx*12 + 4] = rect.b; vertices[idx + vIdx*12 + 5] = rect.a;
-            vertices[idx + vIdx*12 + 6] = rect.x; vertices[idx + vIdx*12 + 7] = rect.y;
-            vertices[idx + vIdx*12 + 8] = rect.w; vertices[idx + vIdx*12 + 9] = rect.h;
-            vertices[idx + vIdx*12 + 10] = rect.radius;
-            vertices[idx + vIdx*12 + 11] = rect.shadow_blur;
-        };
+        // Vertex 0
+        let vBase = idx;
+        vertices[vBase + 0] = px; vertices[vBase + 1] = py;
+        vertices[vBase + 2] = r; vertices[vBase + 3] = g; 
+        vertices[vBase + 4] = b; vertices[vBase + 5] = a;
+        vertices[vBase + 6] = x; vertices[vBase + 7] = y;
+        vertices[vBase + 8] = w; vertices[vBase + 9] = h;
+        vertices[vBase + 10] = radius; vertices[vBase + 11] = shadow_blur;
 
-        pushVertex(0, px, py);
-        pushVertex(1, px + pw, py);
-        pushVertex(2, px, py + ph);
-        
-        pushVertex(3, px + pw, py);
-        pushVertex(4, px + pw, py + ph);
-        pushVertex(5, px, py + ph);
+        // Vertex 1
+        vBase += 12;
+        vertices[vBase + 0] = px + pw; vertices[vBase + 1] = py;
+        vertices[vBase + 2] = r; vertices[vBase + 3] = g; 
+        vertices[vBase + 4] = b; vertices[vBase + 5] = a;
+        vertices[vBase + 6] = x; vertices[vBase + 7] = y;
+        vertices[vBase + 8] = w; vertices[vBase + 9] = h;
+        vertices[vBase + 10] = radius; vertices[vBase + 11] = shadow_blur;
+
+        // Vertex 2
+        vBase += 12;
+        vertices[vBase + 0] = px; vertices[vBase + 1] = py + ph;
+        vertices[vBase + 2] = r; vertices[vBase + 3] = g; 
+        vertices[vBase + 4] = b; vertices[vBase + 5] = a;
+        vertices[vBase + 6] = x; vertices[vBase + 7] = y;
+        vertices[vBase + 8] = w; vertices[vBase + 9] = h;
+        vertices[vBase + 10] = radius; vertices[vBase + 11] = shadow_blur;
+
+        // Vertex 3
+        vBase += 12;
+        vertices[vBase + 0] = px + pw; vertices[vBase + 1] = py;
+        vertices[vBase + 2] = r; vertices[vBase + 3] = g; 
+        vertices[vBase + 4] = b; vertices[vBase + 5] = a;
+        vertices[vBase + 6] = x; vertices[vBase + 7] = y;
+        vertices[vBase + 8] = w; vertices[vBase + 9] = h;
+        vertices[vBase + 10] = radius; vertices[vBase + 11] = shadow_blur;
+
+        // Vertex 4
+        vBase += 12;
+        vertices[vBase + 0] = px + pw; vertices[vBase + 1] = py + ph;
+        vertices[vBase + 2] = r; vertices[vBase + 3] = g; 
+        vertices[vBase + 4] = b; vertices[vBase + 5] = a;
+        vertices[vBase + 6] = x; vertices[vBase + 7] = y;
+        vertices[vBase + 8] = w; vertices[vBase + 9] = h;
+        vertices[vBase + 10] = radius; vertices[vBase + 11] = shadow_blur;
+
+        // Vertex 5
+        vBase += 12;
+        vertices[vBase + 0] = px; vertices[vBase + 1] = py + ph;
+        vertices[vBase + 2] = r; vertices[vBase + 3] = g; 
+        vertices[vBase + 4] = b; vertices[vBase + 5] = a;
+        vertices[vBase + 6] = x; vertices[vBase + 7] = y;
+        vertices[vBase + 8] = w; vertices[vBase + 9] = h;
+        vertices[vBase + 10] = radius; vertices[vBase + 11] = shadow_blur;
 
         rectCount++;
     };
