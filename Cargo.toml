@@ -14,9 +14,10 @@ members = [
     "apps/fetch",
     "apps/piano",
     "apps/midiplayer",
+    "apps/settings",
     "apps/taskman",
     "apps/snake"
-]
+, "test_read"]
 resolver = "2"
 
 [profile.release]

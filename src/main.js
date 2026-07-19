@@ -403,7 +403,7 @@ async function bootstrap() {
         let shouldSaveVfs = false;
         
         // Preload binaries
-        const binaries = ['hello.wasm', 'coreutils.wasm', 'sh.wasm', 'edit.wasm', 'beep.wasm', 'fetch.wasm', 'imgview.wasm', 'calc.wasm', 'fileman.wasm', 'notepad.wasm', 'piano.wasm', 'midiplayer.wasm', 'taskman.wasm', 'snake.wasm'];
+        const binaries = ['hello.wasm', 'coreutils.wasm', 'sh.wasm', 'edit.wasm', 'beep.wasm', 'fetch.wasm', 'imgview.wasm', 'calc.wasm', 'fileman.wasm', 'notepad.wasm', 'piano.wasm', 'midiplayer.wasm', 'taskman.wasm', 'snake.wasm', 'settings.wasm'];
         
         function getBinaryFromDB(db, name) {
             return new Promise((resolve) => {
@@ -785,7 +785,8 @@ async function bootstrap() {
                         
                         // Check if file doesn't exist but we want to create it
                         if (!node) {
-                            // If O_CREAT flag is set (oflags & 1)
+                            console.log(`[WASI] path_open NOT FOUND: ${fullPath}, oflags=${oflags}, fdflags=${fdflags}`);
+                            // If O_CREAT flag is set
                             if (oflags & 1) {
                                 // Create new empty file
                                 const parentPath = getVfsPath(resolvePath(fullPath, ".."));
@@ -964,10 +965,14 @@ async function bootstrap() {
                         if (fd <= 2) {
                             view.setUint8(stat_ptr, 2); // fs_filetype = character device
                             view.setUint16(stat_ptr + 2, 0, true); // fs_flags
+                            view.setBigUint64(stat_ptr + 8, 0xFFFFFFFFFFFFFFFFn, true); // fs_rights_base
+                            view.setBigUint64(stat_ptr + 16, 0xFFFFFFFFFFFFFFFFn, true); // fs_rights_inheriting
                             return 0; // SUCCESS
                         } else if (fd === 3) {
                             view.setUint8(stat_ptr, 3); // fs_filetype = directory
                             view.setUint16(stat_ptr + 2, 0, true); // fs_flags
+                            view.setBigUint64(stat_ptr + 8, 0xFFFFFFFFFFFFFFFFn, true); // fs_rights_base
+                            view.setBigUint64(stat_ptr + 16, 0xFFFFFFFFFFFFFFFFn, true); // fs_rights_inheriting
                             return 0; // SUCCESS
                         }
                         
@@ -975,6 +980,8 @@ async function bootstrap() {
                         if (openFd) {
                             view.setUint8(stat_ptr, openFd.type === "dir" ? 3 : 4);
                             view.setUint16(stat_ptr + 2, 0, true);
+                            view.setBigUint64(stat_ptr + 8, 0xFFFFFFFFFFFFFFFFn, true); // fs_rights_base
+                            view.setBigUint64(stat_ptr + 16, 0xFFFFFFFFFFFFFFFFn, true); // fs_rights_inheriting
                             return 0;
                         }
                     }
@@ -1555,7 +1562,11 @@ async function bootstrap() {
                 window.textCtx.clearRect(0, 0, window.innerWidth, window.innerHeight);
             }
         },
-        clear_screen_js: () => window.clear_screen_js(),
+        clear_screen_js: () => {
+            const bootConsole = document.getElementById('boot-console');
+            if (bootConsole) bootConsole.remove();
+            if (window.clear_screen_js) window.clear_screen_js();
+        },
         load_image_js: (id, url_ptr, url_len) => {
             let url = readString(url_ptr, url_len);
             if (!url) return;
@@ -1614,10 +1625,55 @@ async function bootstrap() {
             }
             return 0;
         },
-        sys_set_background_js: (url_ptr, url_len) => {
+        sys_read_file_js: (path_ptr, path_len, buf_ptr, buf_max) => {
+            const path = readString(path_ptr, path_len);
+            const node = vfs[path];
+            if (!node || node.type !== "file") return -1;
+            
+            const wasm = window.__WASI_PROXY.wasm || wasmInstance;
+            const memory = new Uint8Array(wasm.exports.memory.buffer);
+            const toRead = Math.min(node.content.length, buf_max);
+            for (let i = 0; i < toRead; i++) {
+                memory[buf_ptr + i] = node.content.charCodeAt(i);
+            }
+            return toRead;
+        },
+        sys_set_background_js: async (url_ptr, url_len) => {
             const url = readString(url_ptr, url_len);
+            if (window.lastBackgroundStr === url) return;
+            window.lastBackgroundStr = url;
+            console.log(`[JS] sys_set_background_js called with: '${url}'`);
             if (url) {
-                document.body.style.backgroundImage = `url('${url}')`;
+                let finalUrl = url;
+                if (url === "NASA_APOD") {
+                    console.log(`[JS] Initiating NASA APOD fetch...`);
+                    try {
+                        const d = new Date();
+                        const dateStr = d.toISOString().split('T')[0];
+                        const res = await fetch(`https://api.nasa.gov/planetary/apod?api_key=DEMO_KEY&start_date=${dateStr}&end_date=${dateStr}`);
+                        if (!res.ok) throw new Error("HTTP error " + res.status);
+                        const data = await res.json();
+                        const item = Array.isArray(data) ? data[data.length - 1] : data;
+                        if (item.media_type === "video") {
+                            // If today's APOD is a video, fallback to a beautiful known NASA image
+                            finalUrl = "https://apod.nasa.gov/apod/image/2307/NGC6914_Dutta_3130.jpg";
+                        } else if (item.hdurl) {
+                            finalUrl = item.hdurl;
+                        } else if (item.url) {
+                            finalUrl = item.url;
+                        } else {
+                            throw new Error("No URL in APOD response");
+                        }
+                    } catch (e) {
+                        console.error("Failed to fetch NASA APOD", e);
+                        // Fallback to a stunning NASA galaxy image instead of the dog
+                        finalUrl = "https://apod.nasa.gov/apod/image/2307/NGC6914_Dutta_3130.jpg";
+                    }
+                } else if (url === "DEFAULT") {
+                    document.body.style.backgroundImage = 'none';
+                    return;
+                }
+                document.body.style.backgroundImage = `url('${finalUrl}')`;
                 document.body.style.backgroundSize = "cover";
                 document.body.style.backgroundPosition = "center";
             }

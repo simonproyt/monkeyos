@@ -23,7 +23,8 @@ impl Window {
             "MIDI Player" => 6,
             "Task Manager" => 7,
             "Snake" => 8,
-            _ => 8,
+            "Settings" => 9,
+            _ => 10,
         };
         let id = unsafe { sys_create_window(x, y, w, h, app_type) };
         Self {

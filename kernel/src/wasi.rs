@@ -42,6 +42,7 @@ unsafe extern "C" {
     fn sys_stop_audio();
     fn sys_get_system_info(out_ptr: *mut u8, max_len: usize) -> i32;
     fn sys_set_background_js(url_ptr: *const u8, url_len: usize);
+    fn sys_read_file_js(path_ptr: *const u8, path_len: usize, buf_ptr: *mut u8, buf_max: usize) -> i32;
 }
 
 pub fn call_sys_time_ms() -> u64 {
@@ -70,6 +71,16 @@ pub fn call_sys_stop_audio() {
 
 pub fn call_sys_set_background(url: &str) {
     unsafe { sys_set_background_js(url.as_ptr(), url.len()) }
+}
+
+pub fn read_file(path: &str) -> Option<String> {
+    let mut buf = vec![0u8; 1024];
+    let res = unsafe { sys_read_file_js(path.as_ptr(), path.len(), buf.as_mut_ptr(), buf.len()) };
+    if res >= 0 {
+        Some(String::from_utf8_lossy(&buf[..res as usize]).into_owned())
+    } else {
+        None
+    }
 }
 
 pub fn call_sys_execve(args_buf: &[u8], cwd: &str, stdin: Option<&str>, stdout: Option<&str>, terminal_id: u32) -> i32 {

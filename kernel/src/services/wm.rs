@@ -276,6 +276,8 @@ impl WindowManager {
                 (0.5, 0.5, 0.8, "📊")
             } else if w.title == "Snake" {
                 (0.3, 0.8, 0.3, "🐍")
+            } else if w.title == "Settings" {
+                (0.5, 0.5, 0.5, "⚙️")
             } else {
                 (0.5, 0.5, 0.5, "❓")
             };
@@ -340,8 +342,9 @@ impl WindowManager {
                 ("/bin/imgview", "🖼️", "Image Viewer", (0.2, 0.6, 0.8)),
                 ("/bin/piano", "🎹", "Piano", (0.8, 0.3, 0.3)),
                 ("/bin/midiplayer", "🎵", "MIDI Player", (0.3, 0.8, 0.5)),
-                ("/bin/taskman", "📊", "Task Manager", (0.5, 0.5, 0.8)),
-                ("/bin/snake", "🐍", "Snake", (0.3, 0.8, 0.3)),
+                ("/bin/taskman", "📊", "Task Manager", (0.5, 0.4, 0.4)),
+                ("/bin/snake", "🐍", "Snake", (0.2, 0.6, 0.2)),
+                ("/bin/settings", "⚙️", "Settings", (0.5, 0.5, 0.5)),
             ];
 
             let query = self.start_menu_search.to_lowercase();
@@ -408,9 +411,20 @@ impl Process for WindowManager {
         
         self.tick_count += 1;
         
-        if self.tick_count == 1 {
-            crate::wasi::call_sys_set_background("https://picsum.photos/1920/1080?blur=2");
-            needs_redraw = true;
+        if self.tick_count == 1 || self.tick_count % 60 == 0 {
+            match crate::wasi::read_file("/etc/background.txt") {
+                Some(bg) => {
+                    crate::wasi::print_direct(0, &format!("WM: read_file success: '{}'\n", bg));
+                    crate::wasi::call_sys_set_background(&bg);
+                },
+                None => {
+                    crate::wasi::print_direct(0, "WM: read_file failed\n");
+                    crate::wasi::call_sys_set_background("https://picsum.photos/1920/1080?blur=2");
+                }
+            }
+            if self.tick_count == 1 {
+                needs_redraw = true;
+            }
         }
 
         if self.tick_count % 30 == 0 {
@@ -474,6 +488,7 @@ impl Process for WindowManager {
                             ("/bin/midiplayer", "🎵", "MIDI Player"),
                             ("/bin/taskman", "📊", "Task Manager"),
                             ("/bin/snake", "🐍", "Snake"),
+                            ("/bin/settings", "⚙️", "Settings"),
                         ];
                         let mut filtered_len = 0;
                         for app in all_apps.iter() {
@@ -603,6 +618,7 @@ impl Process for WindowManager {
                                     ("/bin/midiplayer", "🎵", "MIDI Player"),
                                     ("/bin/taskman", "📊", "Task Manager"),
                                     ("/bin/snake", "🐍", "Snake"),
+                                    ("/bin/settings", "⚙️", "Settings"),
                                 ];
 
                                 let query = self.start_menu_search.to_lowercase();
