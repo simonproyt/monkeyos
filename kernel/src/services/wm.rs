@@ -101,11 +101,14 @@ impl WindowManager {
     fn redraw(&self, env: &mut SyscallEnv) {
         env.send_msg(self.display_server_pid, MessagePayload::ClearScreen);
         env.send_msg(self.display_server_pid, MessagePayload::ClearText);
-        
         // Draw Desktop Background
+        // Background image is handled via HTML/CSS by call_sys_set_background, so we don't draw a solid
+        // background here, leaving the WebGPU canvas transparent in this area so the HTML image shows through!
+        
+        // Darken overlay so text and windows are readable over the background image
         env.send_msg(self.display_server_pid, MessagePayload::DrawRect { 
             x: 0, y: 0, w: self.screen_w, h: self.screen_h, 
-            r: 0.08, g: 0.12, b: 0.18, a: 1.0,
+            r: 0.0, g: 0.0, b: 0.0, a: 0.3,
             radius: 0.0, shadow_blur: 0.0
         });
 
@@ -404,6 +407,12 @@ impl Process for WindowManager {
         let mut needs_redraw = false;
         
         self.tick_count += 1;
+        
+        if self.tick_count == 1 {
+            crate::wasi::call_sys_set_background("https://picsum.photos/1920/1080?blur=2");
+            needs_redraw = true;
+        }
+
         if self.tick_count % 30 == 0 {
             needs_redraw = true; // periodic redraw for cursor blinking
         }

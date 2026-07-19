@@ -1614,6 +1614,14 @@ async function bootstrap() {
             }
             return 0;
         },
+        sys_set_background_js: (url_ptr, url_len) => {
+            const url = readString(url_ptr, url_len);
+            if (url) {
+                document.body.style.backgroundImage = `url('${url}')`;
+                document.body.style.backgroundSize = "cover";
+                document.body.style.backgroundPosition = "center";
+            }
+        },
         gui_app_mouse_down_js: (id, mx, my, x, y) => {
             const app = window.gui_apps.find(a => a.__window_id === id);
             if (app && app.exports.handle_mouse_down) {

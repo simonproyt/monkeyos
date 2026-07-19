@@ -41,6 +41,7 @@ unsafe extern "C" {
     fn sys_schedule_note(freq: f32, duration_ms: u32, wave_type: u32, volume: f32, delay_ms: u32);
     fn sys_stop_audio();
     fn sys_get_system_info(out_ptr: *mut u8, max_len: usize) -> i32;
+    fn sys_set_background_js(url_ptr: *const u8, url_len: usize);
 }
 
 pub fn call_sys_time_ms() -> u64 {
@@ -65,6 +66,10 @@ pub fn call_sys_schedule_note(freq: f32, duration_ms: u32, wave_type: u32, volum
 
 pub fn call_sys_stop_audio() {
     unsafe { sys_stop_audio() }
+}
+
+pub fn call_sys_set_background(url: &str) {
+    unsafe { sys_set_background_js(url.as_ptr(), url.len()) }
 }
 
 pub fn call_sys_execve(args_buf: &[u8], cwd: &str, stdin: Option<&str>, stdout: Option<&str>, terminal_id: u32) -> i32 {
