@@ -414,11 +414,9 @@ impl Process for WindowManager {
         if self.tick_count == 1 || self.tick_count % 60 == 0 {
             match crate::wasi::read_file("/etc/background.txt") {
                 Some(bg) => {
-                    crate::wasi::print_direct(0, &format!("WM: read_file success: '{}'\n", bg));
                     crate::wasi::call_sys_set_background(&bg);
                 },
                 None => {
-                    crate::wasi::print_direct(0, "WM: read_file failed\n");
                     crate::wasi::call_sys_set_background("https://picsum.photos/1920/1080?blur=2");
                 }
             }

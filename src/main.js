@@ -1655,8 +1655,8 @@ async function bootstrap() {
                         const data = await res.json();
                         const item = Array.isArray(data) ? data[data.length - 1] : data;
                         if (item.media_type === "video") {
-                            // If today's APOD is a video, fallback to a beautiful known NASA image
-                            finalUrl = "https://apod.nasa.gov/apod/image/2307/NGC6914_Dutta_3130.jpg";
+                            // If today's APOD is a video, fallback to a beautiful known image
+                            finalUrl = "https://images.unsplash.com/photo-1506748686214-e9df14d4d9d0?auto=format&fit=crop&w=1920&q=80";
                         } else if (item.hdurl) {
                             finalUrl = item.hdurl;
                         } else if (item.url) {
@@ -1666,8 +1666,8 @@ async function bootstrap() {
                         }
                     } catch (e) {
                         console.error("Failed to fetch NASA APOD", e);
-                        // Fallback to a stunning NASA galaxy image instead of the dog
-                        finalUrl = "https://apod.nasa.gov/apod/image/2307/NGC6914_Dutta_3130.jpg";
+                        // Fallback to a stunning galaxy image
+                        finalUrl = "https://images.unsplash.com/photo-1506748686214-e9df14d4d9d0?auto=format&fit=crop&w=1920&q=80";
                     }
                 } else if (url === "DEFAULT") {
                     document.body.style.backgroundImage = 'none';
