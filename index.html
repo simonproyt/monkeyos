@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>MonkeyOS WebGPU Microkernel</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
     <style>
       body, html {
         margin: 0;
@@ -11,9 +12,9 @@
         width: 100vw;
         height: 100vh;
         overflow: hidden;
-        background-color: #141e2e;
-        color: #0f0;
-        font-family: monospace;
+        background-color: #0f172a; /* Slate 900 */
+        color: #f8fafc; /* Slate 50 */
+        font-family: 'Inter', sans-serif;
       }
       #os-canvas {
         display: block;
@@ -31,34 +32,124 @@
         z-index: 20;
         pointer-events: none;
       }
-      #boot-console {
+      #boot-screen {
         position: absolute;
         top: 0;
         left: 0;
         width: 100%;
         height: 100%;
-        padding: 20px;
-        box-sizing: border-box;
-        z-index: 2;
+        z-index: 50;
+        background-color: #121212;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        transition: opacity 0.8s ease-in-out, transform 0.8s ease-in-out;
+      }
+      #boot-screen.fade-out {
+        opacity: 0;
+        transform: scale(1.02);
         pointer-events: none;
-        white-space: pre-wrap;
+      }
+      .boot-logo-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        margin-bottom: 30px;
+      }
+      .boot-logo {
+        font-size: 3rem;
+        font-weight: 600;
+        color: #ffffff;
+        margin: 0;
+        letter-spacing: -0.5px;
+      }
+      .boot-subtitle {
+        font-size: 1rem;
+        font-weight: 400;
+        color: #888888;
+        margin-top: 4px;
+        letter-spacing: 1px;
+      }
+      .boot-window {
+        width: 90%;
+        max-width: 700px;
+        height: 350px;
+        background-color: rgba(30, 30, 30, 0.95);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 10px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      .boot-window-header {
+        height: 34px;
+        background-color: rgba(45, 45, 45, 0.95);
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        padding: 0 14px;
+        gap: 8px;
+        border-bottom: 1px solid rgba(0, 0, 0, 0.2);
+      }
+      .boot-window-dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+      }
+      .boot-window-dot.red { background-color: #ff5f56; }
+      .boot-window-dot.yellow { background-color: #ffbd2e; }
+      .boot-window-dot.green { background-color: #27c93f; }
+      #boot-console {
+        padding: 16px;
+        font-family: 'Fira Code', monospace;
+        font-size: 0.85rem;
+        color: #cccccc;
         overflow-y: auto;
+        flex: 1;
+        white-space: pre-wrap;
+        line-height: 1.4;
       }
-      .cursor {
-        background-color: #0f0;
-        color: #000;
-        animation: blink 1s step-end infinite;
+      .log-prefix { color: #888888; }
+      .log-success { color: #27c93f; }
+      .log-error { color: #ff5f56; }
+      .boot-progress-container {
+        width: 100%;
+        height: 4px;
+        background-color: rgba(255, 255, 255, 0.1);
+        margin-top: auto;
       }
-      @keyframes blink {
-        0%, 100% { background-color: #0f0; color: #000; }
-        50% { background-color: transparent; color: #0f0; }
+      .boot-progress-bar {
+        height: 100%;
+        width: 0%;
+        background-color: #38bdf8;
+        transition: width 0.2s ease;
       }
     </style>
   </head>
   <body>
     <canvas id="os-canvas"></canvas>
     <canvas id="text-overlay"></canvas>
-    <div id="boot-console"></div>
+    
+    <div id="boot-screen">
+      <div class="boot-logo-container">
+        <h1 class="boot-logo">MonkeyOS</h1>
+        <div class="boot-subtitle">WebAssembly Microkernel</div>
+      </div>
+      <div class="boot-window">
+        <div class="boot-window-header">
+          <div class="boot-window-dot red"></div>
+          <div class="boot-window-dot yellow"></div>
+          <div class="boot-window-dot green"></div>
+        </div>
+        <div id="boot-console"></div>
+        <div class="boot-progress-container">
+          <div class="boot-progress-bar" id="boot-progress-bar"></div>
+        </div>
+      </div>
+    </div>
+
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>

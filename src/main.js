@@ -24,7 +24,20 @@ console.log = function(...args) {
     originalLog(...args);
     const bootConsole = document.getElementById('boot-console');
     if (bootConsole) {
-        bootConsole.textContent += args.join(' ') + '\n';
+        let text = args.join(' ');
+        let htmlText = escapeHtml(text);
+        
+        // Add basic coloring
+        if (htmlText.includes('[ OK ]')) {
+            htmlText = htmlText.replace('[ OK ]', '<span class="log-success">[ OK ]</span>');
+        } else if (htmlText.includes('Error') || htmlText.includes('Failed')) {
+            htmlText = `<span class="log-error">${htmlText}</span>`;
+        }
+        
+        // Color prefixes like [vite] or [KERNEL]
+        htmlText = htmlText.replace(/^(\[[^\]]+\])/, '<span class="log-prefix">$1</span>');
+        
+        bootConsole.innerHTML += htmlText + '<br>';
         bootConsole.scrollTop = bootConsole.scrollHeight;
     }
 };
@@ -428,7 +441,8 @@ async function bootstrap() {
             });
         }
 
-        for (const bin of binaries) {
+        for (let i = 0; i < binaries.length; i++) {
+            const bin = binaries[i];
             try {
                 let cached = db ? await getBinaryFromDB(db, bin) : null;
                 let buffer = null;
@@ -458,6 +472,13 @@ async function bootstrap() {
                     if (!vfs["/bin"].children.includes(bin.split('.')[0])) {
                         vfs["/bin"].children.push(bin.split('.')[0]);
                     }
+                }
+                
+                // Update progress bar
+                const progressBar = document.getElementById("boot-progress-bar");
+                if (progressBar) {
+                    const percent = Math.floor(((i + 1) / binaries.length) * 100);
+                    progressBar.style.width = percent + "%";
                 }
             } catch (e) {
                 console.error(`Failed to load ${bin}`, e);
@@ -1563,8 +1584,13 @@ async function bootstrap() {
             }
         },
         clear_screen_js: () => {
-            const bootConsole = document.getElementById('boot-console');
-            if (bootConsole) bootConsole.remove();
+            const bootScreen = document.getElementById('boot-screen');
+            if (bootScreen) {
+                bootScreen.classList.add('fade-out');
+                setTimeout(() => {
+                    bootScreen.remove();
+                }, 800);
+            }
             if (window.clear_screen_js) window.clear_screen_js();
         },
         load_image_js: (id, url_ptr, url_len) => {
