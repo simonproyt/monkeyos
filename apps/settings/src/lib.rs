@@ -6,16 +6,22 @@ use std::fs;
 
 static mut WINDOW: Option<Window> = None;
 static mut LABEL_DISPLAY: Option<Label> = None;
+static mut STATUS_LABEL: Option<Label> = None;
 static mut BUTTONS: Option<Vec<(Button, f64, f64)>> = None; // (Button, rel_x, rel_y)
 
 #[no_mangle]
 pub extern "C" fn init() {
     unsafe {
-        WINDOW = Some(Window::new("Settings", 100, 100, 300, 200));
+        WINDOW = Some(Window::new("Settings", 100, 100, 300, 220));
         LABEL_DISPLAY = Some(Label {
             text: "Choose Background API:".to_string(),
             font_size: 16.0,
             color: (1.0, 1.0, 1.0, 1.0),
+        });
+        STATUS_LABEL = Some(Label {
+            text: "".to_string(),
+            font_size: 12.0,
+            color: (0.0, 1.0, 0.0, 1.0), // green text
         });
         
         let mut btns = Vec::new();
@@ -39,6 +45,11 @@ fn handle_btn_click(text: &str) {
         }
         _ => {}
     }
+    unsafe {
+        if let Some(lbl) = &mut STATUS_LABEL {
+            lbl.text = "Saved! Please refresh page to apply.".to_string();
+        }
+    }
 }
 
 #[no_mangle]
@@ -58,6 +69,9 @@ pub extern "C" fn tick(x: i32, y: i32, w: i32, h: i32) {
                 for (btn, rel_x, rel_y) in btns.iter() {
                     btn.draw(win.x + *rel_x as i32, win.y + *rel_y as i32);
                 }
+            }
+            if let Some(lbl) = &STATUS_LABEL {
+                lbl.draw(win.x + 20, win.y + 195);
             }
         }
     }
