@@ -448,13 +448,13 @@ async function bootstrap() {
                 let buffer = null;
                 
                 // Do a HEAD request to check Last-Modified
-                const headResp = await fetch(`/bin/${bin}?t=${Date.now()}`, { method: 'HEAD' });
+                const headResp = await fetch(`./bin/${bin}?t=${Date.now()}`, { method: 'HEAD' });
                 const lastModified = headResp.headers.get("Last-Modified");
                 
                 if (cached && cached.lastModified === lastModified && cached.buffer) {
                     buffer = cached.buffer;
                 } else {
-                    const resp = await fetch(`/bin/${bin}?t=${Date.now()}`);
+                    const resp = await fetch(`./bin/${bin}?t=${Date.now()}`);
                     if (resp.ok) {
                         buffer = await resp.arrayBuffer();
                         if (db) {
